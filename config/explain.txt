@@ -1,0 +1,57 @@
+
+mode=       # the depth of layer (number of ResnetBlock) ['deep, 'deeper', 'deepest'] 
+
+device      # wheter to use GPU ['cuda', 'cpu']
+
+data
+    - dataset       # dataset name
+    - channels      # the number of input's channels
+    - logit_transform(bool)     # whether to conduct logit transformation(?) to input
+    - uniform_dequantization    # whether to conduct uniform dequantization
+    - gaussian_dequantization   # whether to conduct gaussian dequantization
+    - rescaled      # whether to conduct rescale (i.e. logit transformation) to input.
+                      if logit_transform and rescaled is false, input x = 2*x - 1 
+    - num_frames            # the number of predicted num_frames (must be >=0)
+    - num_frames_cond       # the number of previous frames (must be >=0)
+    - num_frames_future     # the number of future frames (must be >=0)
+
+
+model
+    - ngf           # the number of model's channels (output_channels of the first layer which input passes through)
+    - dropout       # the probability of dropout
+    - time_conditional  # whether to use time embedding or not
+    - version       # to check that model type('SMLD', 'DDPM', ...) is correct (only check! don't select!)
+    - output_all_frames     # if false, model only outputs current frames, if true, outputs current frames and condition(previous, future) frames
+    - num_forward_steps   # the number of steps? (related to sigma)
+    - sigma_dist    # type of sigma (['geometric', 'linear', 'cosine'])
+    - sigma_begin   # start value of sigma sequence
+    - sigma_end     # end value of sigma sequence
+    - prob_mask_p        # probability of masking previous frames
+    - prob_mask_f        # probability of masking future frames
+    - prob_mask_s        # probability of masking segmentated frames
+
+
+optim:
+    - optimizer     # type of optimizer in ['Adam', 'RMSProp', 'SGD']
+    - lr            # learning rate
+    - weight_decay  # weight decay (prevents weight from getting too big, and prevents over-fitting)
+                      if 'optimizer'=='Adam' or 'RMSProp', need to be set
+    - beta1         # hyperparameter about momentum (need to be set in 'Adam')
+    - amsgrad       # wheter to use the AMSGrad variant (need to be set in 'Adam')
+    - eps           # hyperparameter to prevent ZERO-division (need to be set in 'Adam')
+
+    # ↓about optimization (Adam, RMSProp, SGD)
+    # https://qiita.com/omiita/items/1735c1d048fe5f611f80#6-rmsprop
+
+
+train
+    - num_epochs    # the number of training epochs
+    - batch_size    # batch size
+    - L1            # whether the loss function is L1 loss or L2 loss
+    - logging       # whether to take logs (bool)
+    - log_interval  # logging interval (int)
+
+eval:
+    - preds_per_test    # the number of prediction for one real video
+
+
