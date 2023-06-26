@@ -31,7 +31,7 @@ def get_sigmas(config):
         t = torch.linspace(T, 0, T+1)/T
         s = 0.008
         f = torch.cos((t + s)/(1 + s) * np.pi/2)**2
-        return f[:-1]/f[-1]
+        return (f[:-1]/f[-1]).to(config.device)
 
     else:
         raise NotImplementedError('sigma distribution not supported')

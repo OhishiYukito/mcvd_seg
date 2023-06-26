@@ -336,7 +336,7 @@ class UNet_DDPM(nn.Module):
         assert self.version == "DDPM" or self.version == "DDIM" or self.version == "FPNDM", f"models/unet : version is not DDPM or DDIM! Given: {self.version}"
 
         self.config = config
-        self.unet = UNet(config)
+        self.unet = UNet(config).to(config.device)
 
         self.schedule = getattr(config.model, 'sigma_dist', 'linear')
         if self.schedule == 'linear':

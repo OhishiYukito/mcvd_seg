@@ -42,7 +42,7 @@ test_dataloader = DataLoader(test_dataset, batch_size=getattr(config.train, 'bat
 test_iter = iter(test_dataloader)
 
 # make the model
-model = UNet_DDPM(config)
+model = UNet_DDPM(config)#.to(config.device)
 model.train()
 
 # function set
@@ -87,7 +87,7 @@ for epoch in range(config.train.num_epochs):
         batch = batch.to(device)
         batch = data_transform(config, batch)
         # separate frames to input(x), condition(cond)
-        x, conds = funcs.separate_frames(batch.to(device))
+        x, conds = funcs.separate_frames(batch)
         
         # sampling t, z, and make noisy frames
         t, z, x_t = funcs.get_noisy_frames(model, x)
@@ -130,64 +130,65 @@ for epoch in range(config.train.num_epochs):
 
         # Log
         if config.train.logging and i % config.train.log_interval == 0:
-            with torch.no_grad():
+            if config.train.validation:
                 # Validation
-                try:
-                    test_batch = next(test_iter)
-                except StopIteration:
-                    test_iter = iter(test_dataloader)
-                    test_batch = next(test_iter)
-                
-                test_batch = data_transform(config, test_batch)
-                
-                target, conds_test = funcs.separate_frames(test_batch.to(device))
-                target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
-                
-                accuracies = {}
-                
-                for task in tags:
-                    if task == "generation":
-                        prob_mask_p = 1.0
-                        prob_mask_f = 1.0
-                    elif task == "interpolation":
-                        prob_mask_p = 0.0
-                        prob_mask_f = 0.0
-                    elif task == "past_prediction":
-                        prob_mask_p = 1.0
-                        prob_mask_f = 0.0
-                    elif task == "future_prediction":
-                        prob_mask_p = 0.0
-                        prob_mask_f = 1.0
+                with torch.no_grad():
+                    try:
+                        test_batch = next(test_iter)
+                    except StopIteration:
+                        test_iter = iter(test_dataloader)
+                        test_batch = next(test_iter)
                     
-                    masked_conds_test, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
+                    test_batch = data_transform(config, test_batch)
                     
-                    # concat conditions (masked_past_frames + masked_future_frames)
-                    if masked_conds_test[0] is not None:
-                        if masked_conds_test[1] is not None:
-                            # condition = cond_frames + future_frames
-                            masked_conds_test = torch.cat(masked_conds_test, dim=1)
+                    target, conds_test = funcs.separate_frames(test_batch.to(device))
+                    target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
+                    
+                    accuracies = {}
+                    
+                    for task in tags:
+                        if task == "generation":
+                            prob_mask_p = 1.0
+                            prob_mask_f = 1.0
+                        elif task == "interpolation":
+                            prob_mask_p = 0.0
+                            prob_mask_f = 0.0
+                        elif task == "past_prediction":
+                            prob_mask_p = 1.0
+                            prob_mask_f = 0.0
+                        elif task == "future_prediction":
+                            prob_mask_p = 0.0
+                            prob_mask_f = 1.0
+                        
+                        masked_conds_test, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
+                        
+                        # concat conditions (masked_past_frames + masked_future_frames)
+                        if masked_conds_test[0] is not None:
+                            if masked_conds_test[1] is not None:
+                                # condition = cond_frames + future_frames
+                                masked_conds_test = torch.cat(masked_conds_test, dim=1)
+                            else:
+                                # condition = cond_frames
+                                masked_conds_test = masked_conds_test[0]
                         else:
-                            # condition = cond_frames
-                            masked_conds_test = masked_conds_test[0]
-                    else:
-                        if masked_conds_test[1] is not None:
-                            # condition = future_frames
-                            masked_conds_test = masked_conds_test[1]
-                        else:
-                            # condition = None
-                            masked_conds_test = None
-                            
-                    init_batch = funcs.get_init_sample(model, target.shape)
-                    # Get predicted x_0
-                    pred = funcs.reverse_process(model, init_batch, masked_conds_test, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
-                    pred = inverse_data_transform(config, pred[-1])
-                    
-                    # Calculate accuracy with target, pred
-                    target = inverse_data_transform(config, target)
-                    conds_test = [inverse_data_transform(config, d) if d is not None else None for d in conds_test]
-                    vid_mse, vid_ssim, vid_lpips, vid_fvd = funcs.get_accuracy(pred, target, conds_test)
-                    accuracies[task] = {"mse":vid_mse, "ssim":vid_ssim, "lpips":vid_lpips, "fvd":vid_fvd}
-                
+                            if masked_conds_test[1] is not None:
+                                # condition = future_frames
+                                masked_conds_test = masked_conds_test[1]
+                            else:
+                                # condition = None
+                                masked_conds_test = None
+                                
+                        init_batch = funcs.get_init_sample(model, target.shape)
+                        # Get predicted x_0
+                        pred = funcs.reverse_process(model, init_batch, masked_conds_test, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
+                        pred = inverse_data_transform(config, pred[-1])
+                        
+                        # Calculate accuracy with target, pred
+                        target = inverse_data_transform(config, target)
+                        conds_test = [inverse_data_transform(config, d) if d is not None else None for d in conds_test]
+                        vid_mse, vid_ssim, vid_lpips, vid_fvd = funcs.get_accuracy(pred, target, conds_test)
+                        accuracies[task] = {"mse":vid_mse, "ssim":vid_ssim, "lpips":vid_lpips, "fvd":vid_fvd}
+                        # TODO save accuracies
                 
                                 
             # logging with wandb

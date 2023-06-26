@@ -82,7 +82,7 @@ class FuncsWithConfig:
         if self.version == "SMLD":
             sigmas = model.sigmas
             used_sigmas = sigmas[t].reshape(x.shape[0], *([1] * len(x.shape[1:])))
-            z = torch.randn_like(x)
+            z = torch.randn_like(x).to(self.config.device)
             x_t = x + used_sigmas * z
         elif self.version == "DDPM" or self.version == "DDIM" or self.version == "FPNDM":
             alphas = model.alphas
@@ -91,12 +91,12 @@ class FuncsWithConfig:
                 # sampling noises from gamma distribution
                 used_k = model.k_cum[t].reshape(x.shape[0], *([1] * len(x.shape[1:]))).repeat(1, *x.shape[1:])
                 used_theta = model.theta_t[t].reshape(x.shape[0], *([1] * len(x.shape[1:]))).repeat(1, *x.shape[1:])
-                z = Gamma(used_k, 1 / used_theta).sample()
+                z = Gamma(used_k, 1 / used_theta).sample().to(self.config.device)
                 z = (z - used_k*used_theta) / (1 - used_alphas).sqrt()
             else:
                 # sampling noises from normal distribution
-                z = torch.randn_like(x)
-            x_t = used_alphas.sqrt() * x + (1 - used_alphas).sqrt() * z
+                z = torch.randn_like(x).to(self.config.device)
+            x_t = used_alphas.sqrt().to(x.device) * x + (1 - used_alphas).sqrt() * z
         
         z = z.reshape(z.shape[0], -1, z.shape[-2], z.shape[-1])
         x_t = x_t.reshape(x_t.shape[0], -1, x_t.shape[-2], x_t.shape[-1])

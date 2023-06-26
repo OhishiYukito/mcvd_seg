@@ -42,6 +42,7 @@ train:
   batch_size: 32
   L1: False
   logging: True
+  validation: False
   log_interval: 5
 
 eval:

@@ -49,6 +49,7 @@ train
     - batch_size    # batch size
     - L1            # whether the loss function is L1 loss or L2 loss
     - logging       # whether to take logs (bool)
+    - validation    # whether to get validation (bool)
     - log_interval  # logging interval (int)
 
 eval:
