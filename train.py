@@ -17,7 +17,6 @@ import os
 #import datetime
 
 # other parameters
-lab_server_pc = False
 config_filename = 'sample.yaml'
 
 # load config
@@ -186,8 +185,7 @@ for epoch in range(config.train.num_epochs):
                         # Calculate accuracy with target, pred
                         target = inverse_data_transform(config, target)
                         conds_test = [inverse_data_transform(config, d) if d is not None else None for d in conds_test]
-                        vid_mse, vid_ssim, vid_lpips, vid_fvd = funcs.get_accuracy(pred, target, conds_test)
-                        accuracies[task] = {"mse":vid_mse, "ssim":vid_ssim, "lpips":vid_lpips, "fvd":vid_fvd}
+                        accuracies = funcs.get_accuracy(pred, target, conds_test)
                         # TODO save accuracies
                 
                                 

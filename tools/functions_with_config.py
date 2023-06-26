@@ -321,16 +321,18 @@ class FuncsWithConfig:
     
     
                 
-    def get_accuracy(self, pred_batch, target_batch, conds):
-        """ calculate MSE, SSIM, LPIPS, FVD of SingleBatch
+    def get_accuracy(self, pred_batch, target_batch, conds, calc_fvd=True):
+        """ calculate MSE, SSIM, LPIPS, FVD of SingleBatch.
+            Please conduct 'inverse_data_transform(batch)' before pass them to this function. 
 
         Args:
             pred_batch (): [B, C*F, H, W]
             target_batch (): [B, C*F, H, W]
             conds (): condition frames without mask (conds=[cond_p, cond_f], cond_p.shape = [B, F, C, H, W])
+            calc_fvd (bool): whether to calculate fvd with
         
         Returns:
-            accuracies : 
+            accuracies (dict): key=["mse", "ssim", "lpips", "fvd"], value is the list that has the average of one video as an element ('fvd' is float value).
         """
         vid_mse, vid_ssim, vid_lpips = [], [], []
         
@@ -383,40 +385,44 @@ class FuncsWithConfig:
         
         
         # FVD
-        # concat past + current + future frames            
-        if conds[0] is not None:
-            conds[0] = conds[0].reshape(len(conds[0]), -1, conds[0].shape[-2], conds[0].shape[-1])
-            target_videos = torch.cat([conds[0], target_batch], dim=1) 
-            pred_videos = torch.cat([conds[0], pred_batch], dim=1)
+        if calc_fvd:
+            # concat past + current + future frames            
+            if conds[0] is not None:
+                conds[0] = conds[0].reshape(len(conds[0]), -1, conds[0].shape[-2], conds[0].shape[-1])
+                target_videos = torch.cat([conds[0], target_batch], dim=1) 
+                pred_videos = torch.cat([conds[0], pred_batch], dim=1)
+            else:
+                target_videos = target_batch
+                pred_videos = pred_batch
+            if conds[1] is not None:
+                conds[1] = conds[1].reshape(len(conds[1]), -1, conds[1].shape[-2], conds[1].shape[-1])
+                target_videos = torch.cat([target_videos, conds[1]], dim=1)
+                pred_videos = torch.cat([pred_videos, conds[1]], dim=1)
+                
+            target_videos = target_videos[::self.config.eval.preds_per_test]    # ignore the repeated ones
+                
+            # convert video_frames shape (B, F, C, H, W) or (B, F*C, H, W) -> (B, C, F, H, W)
+            def to_i3d(x):
+                x = x.reshape(x.shape[0], -1, self.config.data.channels, x.shape[-2], x.shape[-1])
+                if self.config.data.channels == 1:
+                    x = x.repeat(1, 1, 3, 1, 1) # hack for greyscale images
+                x = x.permute(0, 2, 1, 3, 4)  # BTCHW -> BCTHW
+                return x
+            
+            # make i3d model
+            i3d = load_i3d_pretrained(device=self.config.device)
+            
+            # get i3d embedding (use 'get_fvd_feats()' )
+            target_feats = get_fvd_feats(videos=to_i3d(target_videos), i3d=i3d, device=self.config.device)
+            pred_feats = get_fvd_feats(videos=to_i3d(pred_videos), i3d=i3d, device=self.config.device)
+            
+            
+            # get frechet distance between target_video and predicted_video (use 'frechet_distance()')
+            target_feats, pred_feats = np.array(target_feats), np.array(pred_feats) 
+            
+            vid_fvd = frechet_distance(pred_feats, target_feats)
+        
         else:
-            target_videos = target_batch
-            pred_videos = pred_batch
-        if conds[1] is not None:
-            conds[1] = conds[1].reshape(len(conds[1]), -1, conds[1].shape[-2], conds[1].shape[-1])
-            target_videos = torch.cat([target_videos, conds[1]], dim=1)
-            pred_videos = torch.cat([pred_videos, conds[1]], dim=1)
+            None
             
-        target_videos = target_videos[::self.config.eval.preds_per_test]    # ignore the repeated ones
-            
-        # convert video_frames shape (B, F, C, H, W) or (B, F*C, H, W) -> (B, C, F, H, W)
-        def to_i3d(x):
-            x = x.reshape(x.shape[0], -1, self.config.data.channels, x.shape[-2], x.shape[-1])
-            if self.config.data.channels == 1:
-                x = x.repeat(1, 1, 3, 1, 1) # hack for greyscale images
-            x = x.permute(0, 2, 1, 3, 4)  # BTCHW -> BCTHW
-            return x
-        
-        # make i3d model
-        i3d = load_i3d_pretrained(device=self.config.device)
-        
-        # get i3d embedding (use 'get_fvd_feats()' )
-        target_feats = get_fvd_feats(videos=to_i3d(target_videos), i3d=i3d, device=self.config.device)
-        pred_feats = get_fvd_feats(videos=to_i3d(pred_videos), i3d=i3d, device=self.config.device)
-        
-        
-        # get frechet distance between target_video and predicted_video (use 'frechet_distance()')
-        target_feats, pred_feats = np.array(target_feats), np.array(pred_feats) 
-        
-        vid_fvd = frechet_distance(pred_feats, target_feats)
-        
-        return vid_mse, vid_ssim, vid_lpips, vid_fvd
+        return {"mse":vid_mse, "ssim":vid_ssim, "lpips":vid_lpips, "fvd":vid_fvd}
