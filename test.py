@@ -3,12 +3,14 @@ from tools.functions_with_config import FuncsWithConfig
 from datasets import get_dataset
 from config import dict2namespace
 from datasets import get_dataset, data_transform, inverse_data_transform
+from models.fvd.fvd import frechet_distance
 
 import torch
 from torch.utils.data import DataLoader
 import yaml
 import os
-
+import numpy as np
+import pickle
 
 # other parameters
 config_filename = 'sample.yaml'
@@ -39,6 +41,7 @@ tags = funcs.get_tags()
 folder_path = os.path.join('results', config.data.dataset.upper())
 ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')
 states = torch.load(ckpt_path)  # [model_params, optimizer_params, epoch, step]
+print(f"--------- load {ckpt_path} ---------------")
 model = UNet_DDPM(config)
 model.load_state_dict(states[0])
 model.eval()
@@ -58,11 +61,17 @@ else:
 # 評価するときは、1つの正解データに対してpreds_per_test回の予測を行う。
 # そして、その平均値をとる。
 # なので、正解データが5個であれば、モデルは5*preds_per_test回サンプリングを行い、その平均がスコアとなる。
-for test_batch in test_dataloader:
+result_base = {"mse": [],
+                "ssim":[],
+                "lpips_list":[],
+                "target_embeddings":[],
+                "pred_embeddings":[]}
+result = {task: result_base.copy() for task in tags}
+for test_batch in enumerate(test_dataloader):
     with torch.no_grad():        
         test_batch = data_transform(config, test_batch)
         
-        target, conds_test = funcs.separate_frames(test_batch.to(device))
+        target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
         target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
         
         for task in tags:
@@ -105,6 +114,69 @@ for test_batch in test_dataloader:
             # Calculate accuracy with target, pred
             target = inverse_data_transform(config, target)
             conds_test = [inverse_data_transform(config, d) if d is not None else None for d in conds_test]
-            accuracies = funcs.get_accuracy(pred, target, conds_test)
+            accuracies = funcs.get_accuracy(pred, target, conds_test, calc_fvd=False, only_embedding=True)
             
-            # TODO save accuracies
+            # append each score
+            for key in result_base.keys():
+                result[task][key].append(accuracies[key])
+
+# TODO save accuracies
+with open(os.path.join(folder_path, '-'.join(tags)+'test_results.pkl')) as f:
+    pickle.dump(result, f)
+
+def get_avg_std_from_best_score_list(best_score_list):
+    avg, std = best_score_list.mean().item(), best_score_list.std().item()
+    return avg, std
+
+# TODO calculate accuracies average, std, (conf95(= 95% confidence interval))   
+print("======== calc avg, std ========")
+calc_result = {}
+for task in result.keys():
+    calc_result[task] = {}
+    print(f"----- ↓{task} -----")
+    for key in enumerate(result[task].keys()):
+        if key in ["mse", "ssim", "lpips"]:
+            score_list = np.array(result[task][key]).reshape((-1, config.eval.preds_per_test))
+            # get best score list
+            if key=="mse":
+                score_list = score_list.min(-1)
+                # calc and save psnr_score
+                psnr_list = (10 * np.log10(1 / np.array(result[task][key]))).reshape((-1, config.eval.preds_per_test).max(-1))
+                avg, std = get_avg_std_from_best_score_list(psnr_list)
+                calc_result[task]["psnr"] = {"avg": avg, "std": std}
+                print(f"psnr:\t{avg}±{std}")
+            elif key=="ssim":
+                score_list = score_list.max(-1)
+            elif key=="lpips":
+                score_list = score_list.min(-1)
+            # get avg, std
+            avg, std = get_avg_std_from_best_score_list(score_list)
+            calc_result[task][key] = {"avg": avg, "std": std}
+            print(f"{key}:\t{avg}±{std}")
+            
+        elif key=="fvd" and (result[task][key][0] is not None):
+            # fvd per batch
+            avg, std = get_avg_std_from_best_score_list(result[task][key])
+            calc_result[task]["fvd_per_batch"] = {"avg":avg, "std":std}
+            print(f"fvd_per_batch:\t{avg}±{std}")
+            
+        elif key=="embeddings":
+            target_embeddings = np.concatenate(result[task][key][0])
+            pred_embeddings = np.concatenate(result[task][key][1])
+            fvd = frechet_distance(pred_embeddings, target_embeddings)
+            if config.eval.preds_per_test > 1:
+                fvds_list = []
+                # calc FVD for each trajectory and its average
+                trajs = np.random.choice(np.arange(config.eval.preds_per_test), (config.eval.preds_per_test), replace=False)
+                for traj in trajs:
+                    fvds_list.append(frechet_distance(pred_embeddings[traj::config.eval.preds_per_test], target_embeddings))
+                fvd_traj_avg, fvd_traj_std = float(np.mean(fvds_list)), float(np.std(fvds_list))
+                calc_result[task]["fvd_traj"] = {"avg":fvd_traj_avg, "std":fvd_traj_std}
+                print(f"fvd_traj:\t{fvd_traj_avg}±{fvd_traj_std}")
+                
+            calc_result[task]["fvd"] = {"avg":fvd}
+            print(f"fvd:\t{avg}")
+
+with open(os.path.join(folder_path, '-'.join(tags)+'test_calc_scores.txt'), "w") as f:
+    for task in calc_result.keys():
+        print(calc_result[task], file=f)

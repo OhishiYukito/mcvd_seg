@@ -1,16 +1,21 @@
 # the class which has some functions with config for MCVD with Segmentation
 
-
+import imageio
+import os
 import torch
 from torch.distributions.gamma import Gamma
 import torch.nn.functional as F
 import torchvision.transforms as Transforms
 import numpy as np
-from skimage.metrics import structural_similarity as ssim
 from functools import partial
+from torchvision.utils import make_grid, save_image
+from skimage.metrics import structural_similarity as ssim
+from cv2 import putText
+from math import ceil
 
-from models.fvd.fvd import get_fvd_feats, load_i3d_pretrained, frechet_distance
 import models.eval_models as eval_models
+from models.fvd.fvd import get_fvd_feats, load_i3d_pretrained, frechet_distance
+
 
 class FuncsWithConfig:
     def __init__(self, config):
@@ -51,7 +56,7 @@ class FuncsWithConfig:
             
         x = batch[:, self.num_cond:self.num_cond+self.num_pred]
         
-        cond_f = batch[:, self.num_cond+self.num_pred:] if self.num_future else None
+        cond_f = batch[:, self.num_cond+self.num_pred:] if self.num_future>0 else None
             
         conds = [cond_p, cond_f]
         
@@ -321,7 +326,7 @@ class FuncsWithConfig:
     
     
                 
-    def get_accuracy(self, pred_batch, target_batch, conds, calc_fvd=True):
+    def get_accuracy(self, pred_batch, target_batch, conds, calc_fvd=True, only_embedding=True):
         """ calculate MSE, SSIM, LPIPS, FVD of SingleBatch.
             Please conduct 'inverse_data_transform(batch)' before pass them to this function. 
 
@@ -329,10 +334,14 @@ class FuncsWithConfig:
             pred_batch (): [B, C*F, H, W]
             target_batch (): [B, C*F, H, W]
             conds (): condition frames without mask (conds=[cond_p, cond_f], cond_p.shape = [B, F, C, H, W])
-            calc_fvd (bool): whether to calculate fvd with
+            calc_fvd (bool): whether to calculate fvd
+            only_embedding: 
         
         Returns:
-            accuracies (dict): key=["mse", "ssim", "lpips", "fvd"], value is the list that has the average of one video as an element ('fvd' is float value).
+            accuracies (dict): key=["mse", "ssim", "lpips", "fvd", "embeddings"],
+                                "fvd"(the score per batch) is float or None, 
+                                "embeddings"=[target_embed, pred_embed] (each embed is a list that has embedding vector as elements, or None).
+                                other params are list that has single video's score as an element. 
         """
         vid_mse, vid_ssim, vid_lpips = [], [], []
         
@@ -385,7 +394,7 @@ class FuncsWithConfig:
         
         
         # FVD
-        if calc_fvd:
+        if calc_fvd or only_embedding:
             # concat past + current + future frames            
             if conds[0] is not None:
                 conds[0] = conds[0].reshape(len(conds[0]), -1, conds[0].shape[-2], conds[0].shape[-1])
@@ -419,10 +428,177 @@ class FuncsWithConfig:
             
             # get frechet distance between target_video and predicted_video (use 'frechet_distance()')
             target_feats, pred_feats = np.array(target_feats), np.array(pred_feats) 
-            
-            vid_fvd = frechet_distance(pred_feats, target_feats)
+            if calc_fvd:
+                vid_fvd = frechet_distance(pred_feats, target_feats)
         
         else:
-            None
+            vid_fvd, target_feats, pred_feats = None, None, None
             
-        return {"mse":vid_mse, "ssim":vid_ssim, "lpips":vid_lpips, "fvd":vid_fvd}
+        return {"mse":vid_mse, "ssim":vid_ssim, "lpips":vid_lpips, "fvd":vid_fvd, "embeddings":[target_feats, pred_feats] }
+    
+    
+    # https://github.com/voletiv/mcvd-pytorch/blob/master/runners/ncsn_runner.py#L1996
+    def plot_frames(self, conds, current_frames, video_folder, task_name, config_filename):
+        """save frames as gif and png
+
+        Args:
+            conds (list): condition frames [past, future]   (B, F*C, H, W)
+            current_frames (list): [target, predicted]      (B, F*C, H, W)
+            video_folder (str): path to save gif
+            task_name (str): be used as a part of filename
+            config_filename (str): be used as a part of filename (REMOVE extension '.yaml')
+        """
+   
+        gif_frames_cond = []
+        gif_frames_pred, gif_frames_pred2, gif_frames_pred3 = [], [], []
+        gif_frames_futr = []
+
+        # we show conditional frames, and real&pred side-by-side
+        # past frames
+        if conds[0] is not None:
+            cond = conds[0]
+            for t in range(conds[0].shape[1]//self.config.data.channels):
+                cond_t = cond[:, t*self.config.data.channels:(t+1)*self.config.data.channels]     # BCHW
+                frame = torch.cat([cond_t, 0.5*torch.ones(*cond_t.shape[:-1], 2), cond_t], dim=-1)
+                frame = frame.permute(0, 2, 3, 1).numpy()
+                frame = np.stack([putText(f.copy(), f"{t+1:2d}p", (4, 15), 0, 0.5, (1,1,1), 1) for f in frame])
+                nrow = ceil(np.sqrt(2*cond.shape[0])/2)
+                gif_frame = make_grid(torch.from_numpy(frame).permute(0, 3, 1, 2), nrow=nrow, padding=6, pad_value=0.5).permute(1, 2, 0).numpy()  # HWC
+                gif_frames_cond.append((gif_frame*255).astype('uint8'))
+                if t == 0:
+                    gif_frames_cond.append((gif_frame*255).astype('uint8'))
+                del frame, gif_frame
+                
+        # current frames
+        real = current_frames[0]
+        pred = current_frames[1]
+        if real.shape[1] < pred.shape[1]: # Pad with zeros to prevent bugs
+            real = torch.cat([real, torch.zeros(real.shape[0], pred.shape[1]-real.shape[1], real.shape[2], real.shape[3])], dim=1)
+         
+        for t in range(pred.shape[1]//self.config.data.channels):
+            real_t = real[:, t*self.config.data.channels:(t+1)*self.config.data.channels]     # BCHW
+            pred_t = pred[:, t*self.config.data.channels:(t+1)*self.config.data.channels]     # BCHW
+            frame = torch.cat([real_t, 0.5*torch.ones(*pred_t.shape[:-1], 2), pred_t], dim=-1)
+            frame = frame.permute(0, 2, 3, 1).numpy()
+            frame = np.stack([putText(f.copy(), f"{t+1:02d}", (4, 15), 0, 0.5, (1,1,1), 1) for f in frame])
+            nrow = ceil(np.sqrt(2*pred.shape[0])/2)
+            gif_frame = make_grid(torch.from_numpy(frame).permute(0, 3, 1, 2), nrow=nrow, padding=6, pad_value=0.5).permute(1, 2, 0).numpy()  # HWC
+            gif_frames_pred.append((gif_frame*255).astype('uint8'))
+            if t == pred.shape[1]//self.config.data.channels - 1 and (conds[1] is not None):
+                gif_frames_pred.append((gif_frame*255).astype('uint8'))
+            del frame, gif_frame
+        
+        # future frames
+        if conds[1] is not None:
+            futr = conds[1]
+            for t in range(futr.shape[1]//self.config.data.channels):
+                futr_t = futr[:, t*self.config.data.channels:(t+1)*self.config.data.channels]     # BCHW
+                frame = torch.cat([futr_t, 0.5*torch.ones(*futr_t.shape[:-1], 2), futr_t], dim=-1)
+                frame = frame.permute(0, 2, 3, 1).numpy()
+                frame = np.stack([putText(f.copy(), f"{t+1:2d}f", (4, 15), 0, 0.5, (1,1,1), 1) for f in frame])
+                nrow = ceil(np.sqrt(2*futr.shape[0])/2)
+                gif_frame = make_grid(torch.from_numpy(frame).permute(0, 3, 1, 2), nrow=nrow, padding=6, pad_value=0.5).permute(1, 2, 0).numpy()  # HWC
+                gif_frames_futr.append((gif_frame*255).astype('uint8'))
+                if t == futr.shape[1]//self.config.data.channels - 1:
+                    gif_frames_futr.append((gif_frame*255).astype('uint8'))
+                del frame, gif_frame
+                
+        # Save gif
+        if task_name=="future_prediction":          # Future Prediction
+            imageio.mimwrite(os.path.join(video_folder, f"videos_future-pred_[{config_filename}].gif"),
+                                [*gif_frames_cond, *gif_frames_pred], fps=4)
+        elif task_name=="interpolation":            # Interpolation
+            imageio.mimwrite(os.path.join(video_folder, f"videos_interp_[{config_filename}].gif"),
+                                [*gif_frames_cond, *gif_frames_pred, *gif_frames_futr], fps=4)
+        elif task_name=="generation":               # Generation
+            imageio.mimwrite(os.path.join(video_folder, f"videos_gen_[{config_filename}].gif"),
+                                gif_frames_pred, fps=4)
+        elif task_name=="past_prediction":          # Past Prediction
+            imageio.mimwrite(os.path.join(video_folder, f"videos_past-pred_[{config_filename}].gif"),
+                                [*gif_frames_pred, *gif_frames_futr], fps=4)
+
+        del gif_frames_cond, gif_frames_pred, gif_frames_pred2, gif_frames_pred3, gif_frames_futr
+        
+        # Save stretch frames
+        def stretch_image(X, ch, imsize):
+            # (B, F*C, H, W) -> (B, C, H, F*W)
+            return X.reshape(len(X), -1, ch, imsize, imsize).permute(0, 2, 1, 4, 3).reshape(len(X), ch, -1, imsize).permute(0, 1, 3, 2)
+        
+        def save_past_pred(pred, real):
+            # save frames as dict
+            torch.save({"futr": futr, "pred": pred, "real": real},
+                        os.path.join(video_folder, f"videos_past-pred_[{config_filename}].pt"))
+            pred_im = stretch_image(pred, self.config.data.channels, self.config.data.image_size)
+            real_im = stretch_image(real, self.config.data.channels, self.config.data.image_size)
+            futr_im = stretch_image(futr, self.config.data.channels, self.config.data.image_size)
+            padding_hor = 0.5*torch.ones(*real_im.shape[:-1], 2)
+            real_data = torch.cat([real_im, padding_hor, futr_im], dim=-1)
+            pred_data = torch.cat([pred_im, padding_hor, 0.5*torch.ones_like(futr_im)], dim=-1)
+            padding_ver = 0.5*torch.ones(*real_im.shape[:-2], 2, real_data.shape[-1])
+            data = torch.cat([real_data, padding_ver, pred_data], dim=-2)
+            # Save stretched image
+            # Set 'nrow' as follows to make the image shape closer to a square
+            nrow = ceil(np.sqrt((self.num_pred+self.num_future)*pred.shape[0])/(self.num_pred+self.num_future))
+            image_grid = make_grid(data, nrow=nrow, padding=6, pad_value=0.5)
+            save_image(image_grid, os.path.join(video_folder, f"videos_stretch_past-pred_[{config_filename}].png"))
+        
+        def save_future_pred(pred, real):
+            # save frames as dict
+            torch.save({"cond": cond, "pred": pred, "real": real},
+                        os.path.join(video_folder, f"videos_future-pred_[{config_filename}].pt"))
+            cond_im = stretch_image(cond, self.config.data.channels, self.config.data.image_size)
+            pred_im = stretch_image(pred, self.config.data.channels, self.config.data.image_size)
+            real_im = stretch_image(real, self.config.data.channels, self.config.data.image_size)
+            padding_hor = 0.5*torch.ones(*real_im.shape[:-1], 2)
+            real_data = torch.cat([cond_im, padding_hor, real_im], dim=-1)
+            pred_data = torch.cat([0.5*torch.ones_like(cond_im), padding_hor, pred_im], dim=-1)
+            padding_ver = 0.5*torch.ones(*real_im.shape[:-2], 2, real_data.shape[-1])
+            data = torch.cat([real_data, padding_ver, pred_data], dim=-2)
+            # Save stretched image
+            # Set 'nrow' as follows to make the image shape closer to a square
+            nrow = ceil(np.sqrt((self.num_cond+self.num_pred)*pred.shape[0])/(self.num_cond+self.num_pred))
+            image_grid = make_grid(data, nrow=nrow, padding=6, pad_value=0.5)
+            save_image(image_grid, os.path.join(video_folder, f"videos_stretch_future-pred_[{config_filename}].png"))
+
+        def save_interp(pred, real):
+            # save frames as dict
+            torch.save({"cond": cond, "pred": pred, "real": real, "futr": futr},
+                            os.path.join(video_folder, f"videos_interp_[{config_filename}].pt"))
+            cond_im = stretch_image(cond, self.config.data.channels, self.config.data.image_size)
+            pred_im = stretch_image(pred, self.config.data.channels, self.config.data.image_size)
+            real_im = stretch_image(real, self.config.data.channels, self.config.data.image_size)
+            futr_im = stretch_image(futr, self.config.data.channels, self.config.data.image_size)
+            padding_hor = 0.5*torch.ones(*real_im.shape[:-1], 2)
+            real_data = torch.cat([cond_im, padding_hor, real_im, padding_hor, futr_im], dim=-1)
+            pred_data = torch.cat([0.5*torch.ones_like(cond_im), padding_hor, pred_im, padding_hor, 0.5*torch.ones_like(futr_im)], dim=-1)
+            padding_ver = 0.5*torch.ones(*real_im.shape[:-2], 2, real_data.shape[-1])
+            data = torch.cat([real_data, padding_ver, pred_data], dim=-2)
+            # Save stretched image
+            # Set 'nrow' as follows to make the image shape closer to a square
+            nrow = ceil(np.sqrt((self.num_cond+self.num_pred+self.num_future)*pred.shape[0])/(self.num_cond+self.num_pred+self.num_future))
+            image_grid = make_grid(data, nrow=nrow, padding=6, pad_value=0.5)
+            save_image(image_grid, os.path.join(video_folder, f"videos_stretch_interp_[{config_filename}].png"))
+
+        def save_gen(pred):
+            if pred is None:
+                return
+            # save frames as dict
+            torch.save({"gen": pred}, os.path.join(video_folder, f"videos_gen_[{config_filename}].pt"))
+            data = stretch_image(pred, self.config.data.channels, self.config.data.image_size)
+            # Save stretched image
+            # Set 'nrow' as follows to make the image shape closer to a square
+            nrow = ceil(np.sqrt((self.num_pred)*pred.shape[0])/(self.num_pred))
+            image_grid = make_grid(data, nrow=nrow, padding=6, pad_value=0.5)
+            save_image(image_grid, os.path.join(video_folder, f"videos_stretch_gen_[{config_filename}].png"))
+
+        if task_name=="past_prediction":
+            save_past_pred(pred, real)
+
+        elif task_name=="future_prediction":
+            save_future_pred(pred, real)
+            
+        elif task_name=="interpolation":
+            save_interp(pred, real)
+
+        elif task_name=="generation":
+            save_gen(pred)
