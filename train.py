@@ -11,16 +11,22 @@ from config import dict2namespace
 import torch
 from torch.utils.data import DataLoader
 import yaml
+import argparse
 from tqdm import tqdm
 import wandb
 import os
 #import datetime
 
-# other parameters
-config_filename = 'bair_01.yaml'
+
+# get args
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_01.yaml')
+
+args = parser.parse_args()
+
 
 # load config
-with open('config/'+config_filename) as f:
+with open('config/'+args.config_path) as f:
    dict_config = yaml.load(f, Loader=yaml.FullLoader)
 config = dict2namespace(dict_config)
 
@@ -71,7 +77,7 @@ tags = funcs.get_tags()
 wandb.init(
     project="MCVD with Seg",
     config=dict_config,
-    name=config_filename,
+    name=args.config_path,
     tags=tags,
 )
 step = 0
@@ -201,9 +207,9 @@ for epoch in range(config.train.num_epochs):
                       epoch,
                       step
                       ]
-            folder_path = os.path.join('results', config.data.dataset.upper())
+            folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path)
             os.makedirs(folder_path, exist_ok=True)
             #dt = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M')
-            #ckpt_path = os.path.join(folder_path, '-'.join(tags)+'__'+dt+'.pt')  # 'results/[DATASET]/[TASK1]-[TASK2]__[DATETIME].pt'
-            ckpt_path = os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'.pt')          # 'results/[DATASET]/[TASK1]-[TASK2].pt'
+            #ckpt_path = os.path.join(folder_path, '-'.join(tags)+'__'+dt+'.pt')  # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2]__[DATETIME].pt'
+            ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')          # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2].pt'
             torch.save(states, ckpt_path)

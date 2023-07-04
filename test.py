@@ -13,13 +13,19 @@ import yaml
 import os
 import numpy as np
 import pickle
+import argparse
 from tqdm import tqdm
 
-# other parameters
-config_filename = 'bair_01.yaml'
+
+# get args
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_01.yaml')
+
+args = parser.parse_args()
+
 
 # load config
-with open('config/'+config_filename) as f:
+with open('config/'+args.config_path) as f:
    dict_config = yaml.load(f, Loader=yaml.FullLoader)
 config = dict2namespace(dict_config)
 
@@ -41,8 +47,8 @@ funcs = FuncsWithConfig(config)
 
 # load the model
 tags = funcs.get_tags()
-folder_path = os.path.join('results', config.data.dataset.upper())
-ckpt_path = os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'.pt') 
+folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path)
+ckpt_path = os.path.join(folder_path, f'[{args.config_path.replace(".yaml", "")}]_'+'-'.join(tags)+'.pt') 
 states = torch.load(ckpt_path)  # [model_params, optimizer_params, epoch, step]
 print(f"--------- load {ckpt_path} ---------------")
 model = UNet_DDPM(config)
@@ -138,7 +144,7 @@ for test_batch in tqdm(test_dataloader):
                     result[task][key].append(accuracies[key])
 
 # TODO save accuracies
-with open(os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'_test_results.pkl'), "wb") as f:
+with open(os.path.join(folder_path, f'[{args.config_path.replace(".yaml", "")}]_'+'-'.join(tags)+'_test_results.pkl'), "wb") as f:
     pickle.dump(result, f)
 
 def get_avg_std_from_best_score_list(best_score_list):
@@ -194,7 +200,7 @@ for task in result.keys():
             calc_result[task]["fvd"] = {"avg":fvd}
             print(f"fvd:\t{fvd}")
 
-with open(os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'_test_calc_scores.txt'), "w") as f:
+with open(os.path.join(folder_path, f'[{args.config_path.replace(".yaml", "")}]_'+'-'.join(tags)+'_test_calc_scores.txt'), "w") as f:
     for task in calc_result.keys():
         print(f"---{task}---", file=f)
         for key in calc_result[task].keys():
@@ -249,4 +255,4 @@ with torch.no_grad():
         target = inverse_data_transform(config, target).cpu()
         conds_test = [inverse_data_transform(config, d).cpu() if d is not None else None for d in conds_test]
 
-        funcs.plot_frames(conds_test, [target, pred], video_folder=folder_path, task_name=task, config_filename=config_filename.replace(".yaml", ""))
+        funcs.plot_frames(conds_test, [target, pred], video_folder=folder_path, task_name=task, config_filename=args.config_path.replace(".yaml", ""))
