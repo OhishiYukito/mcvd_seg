@@ -17,7 +17,7 @@ import os
 #import datetime
 
 # other parameters
-config_filename = 'sample.yaml'
+config_filename = 'bair_01.yaml'
 
 # load config
 with open('config/'+config_filename) as f:
@@ -205,5 +205,5 @@ for epoch in range(config.train.num_epochs):
             os.makedirs(folder_path, exist_ok=True)
             #dt = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M')
             #ckpt_path = os.path.join(folder_path, '-'.join(tags)+'__'+dt+'.pt')  # 'results/[DATASET]/[TASK1]-[TASK2]__[DATETIME].pt'
-            ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')          # 'results/[DATASET]/[TASK1]-[TASK2].pt'
+            ckpt_path = os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'.pt')          # 'results/[DATASET]/[TASK1]-[TASK2].pt'
             torch.save(states, ckpt_path)

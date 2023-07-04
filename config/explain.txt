@@ -54,5 +54,6 @@ train
 
 eval:
     - preds_per_test    # the number of prediction for one real video
+    - subsample_steps   # the number of steps of reverse process
 
 

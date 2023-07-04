@@ -1,9 +1,11 @@
+from random import sample
 from models.unet import UNet, UNet_SMLD, UNet_DDPM
 from tools.functions_with_config import FuncsWithConfig
 from datasets import get_dataset
 from config import dict2namespace
 from datasets import get_dataset, data_transform, inverse_data_transform
-from models.fvd.fvd import frechet_distance
+from models.fvd.fvd import frechet_distance, load_i3d_pretrained
+import models.eval_models as eval_models
 
 import torch
 from torch.utils.data import DataLoader
@@ -11,9 +13,10 @@ import yaml
 import os
 import numpy as np
 import pickle
+from tqdm import tqdm
 
 # other parameters
-config_filename = 'sample.yaml'
+config_filename = 'bair_01.yaml'
 
 # load config
 with open('config/'+config_filename) as f:
@@ -29,7 +32,7 @@ def my_collate(batch):
 
 # make the Dataset (Dataloader)
 # https://github.com/voletiv/mcvd-pytorch/blob/master/runners/ncsn_runner.py#L254
-train_dataset, test_dataset = get_dataset(config)
+_, test_dataset = get_dataset(config)
 ##### TODO make Dataset and Dataloader for Segmentation #########################################
 test_dataloader = DataLoader(test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4, drop_last=True, collate_fn=my_collate)
 
@@ -39,12 +42,10 @@ funcs = FuncsWithConfig(config)
 # load the model
 tags = funcs.get_tags()
 folder_path = os.path.join('results', config.data.dataset.upper())
-ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')
+ckpt_path = os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'.pt') 
 states = torch.load(ckpt_path)  # [model_params, optimizer_params, epoch, step]
 print(f"--------- load {ckpt_path} ---------------")
 model = UNet_DDPM(config)
-model.load_state_dict(states[0])
-model.eval()
 
 # Parallelisation
 if config.device=="cuda":
@@ -58,16 +59,27 @@ if config.device=="cuda":
 else:
     device = torch.device("cpu")
 
+model.load_state_dict(states[0])
+model.eval()
+
+# some models for accuracies
+model_lpips = eval_models.PerceptualLoss(model='net-lin',net='alex', device=config.device)
+i3d = load_i3d_pretrained(device=config.device)    # make i3d model
+
 # 評価するときは、1つの正解データに対してpreds_per_test回の予測を行う。
 # そして、その平均値をとる。
 # なので、正解データが5個であれば、モデルは5*preds_per_test回サンプリングを行い、その平均がスコアとなる。
 result_base = {"mse": [],
                 "ssim":[],
-                "lpips_list":[],
-                "target_embeddings":[],
-                "pred_embeddings":[]}
+                "lpips":[],
+                "embeddings":{"target":[], "pred":[]},}
 result = {task: result_base.copy() for task in tags}
-for test_batch in enumerate(test_dataloader):
+#step = 0
+for test_batch in tqdm(test_dataloader):
+    #if step==3:
+    #    break
+    #else:
+    #    step+=1
     with torch.no_grad():        
         test_batch = data_transform(config, test_batch)
         
@@ -108,25 +120,30 @@ for test_batch in enumerate(test_dataloader):
                     
             init_batch = funcs.get_init_sample(model, target.shape)
             # Get predicted x_0
-            pred = funcs.reverse_process(model, init_batch, masked_conds_test, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
+            pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
             pred = inverse_data_transform(config, pred[-1])
             
             # Calculate accuracy with target, pred
             target = inverse_data_transform(config, target)
             conds_test = [inverse_data_transform(config, d) if d is not None else None for d in conds_test]
-            accuracies = funcs.get_accuracy(pred, target, conds_test, calc_fvd=False, only_embedding=True)
+            accuracies = funcs.get_accuracy(pred, target, conds_test, 
+                                            model_lpips=model_lpips, i3d=i3d, calc_fvd=False, only_embedding=True)
             
             # append each score
             for key in result_base.keys():
-                result[task][key].append(accuracies[key])
+                if key=="embeddings":
+                    result[task][key]["target"].append(accuracies[key][0])
+                    result[task][key]["pred"].append(accuracies[key][1])
+                else:
+                    result[task][key].append(accuracies[key])
 
 # TODO save accuracies
-with open(os.path.join(folder_path, '-'.join(tags)+'test_results.pkl')) as f:
+with open(os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'_test_results.pkl'), "wb") as f:
     pickle.dump(result, f)
 
 def get_avg_std_from_best_score_list(best_score_list):
     avg, std = best_score_list.mean().item(), best_score_list.std().item()
-    return avg, std
+    return round(avg,3), round(std,3)
 
 # TODO calculate accuracies average, std, (conf95(= 95% confidence interval))   
 print("======== calc avg, std ========")
@@ -134,14 +151,14 @@ calc_result = {}
 for task in result.keys():
     calc_result[task] = {}
     print(f"----- ↓{task} -----")
-    for key in enumerate(result[task].keys()):
+    for key in result[task].keys():
         if key in ["mse", "ssim", "lpips"]:
             score_list = np.array(result[task][key]).reshape((-1, config.eval.preds_per_test))
             # get best score list
             if key=="mse":
                 score_list = score_list.min(-1)
                 # calc and save psnr_score
-                psnr_list = (10 * np.log10(1 / np.array(result[task][key]))).reshape((-1, config.eval.preds_per_test).max(-1))
+                psnr_list = (10 * np.log10(1 / np.array(result[task][key]))).reshape((-1, config.eval.preds_per_test)).max(-1)
                 avg, std = get_avg_std_from_best_score_list(psnr_list)
                 calc_result[task]["psnr"] = {"avg": avg, "std": std}
                 print(f"psnr:\t{avg}±{std}")
@@ -161,22 +178,75 @@ for task in result.keys():
             print(f"fvd_per_batch:\t{avg}±{std}")
             
         elif key=="embeddings":
-            target_embeddings = np.concatenate(result[task][key][0])
-            pred_embeddings = np.concatenate(result[task][key][1])
-            fvd = frechet_distance(pred_embeddings, target_embeddings)
+            target_embeddings = np.concatenate(np.array(result[task][key]["target"]))
+            pred_embeddings = np.concatenate(np.array(result[task][key]["pred"]))
+            fvd = round(frechet_distance(pred_embeddings, target_embeddings),3)
             if config.eval.preds_per_test > 1:
                 fvds_list = []
                 # calc FVD for each trajectory and its average
                 trajs = np.random.choice(np.arange(config.eval.preds_per_test), (config.eval.preds_per_test), replace=False)
                 for traj in trajs:
                     fvds_list.append(frechet_distance(pred_embeddings[traj::config.eval.preds_per_test], target_embeddings))
-                fvd_traj_avg, fvd_traj_std = float(np.mean(fvds_list)), float(np.std(fvds_list))
+                fvd_traj_avg, fvd_traj_std = round(float(np.mean(fvds_list)),3), round(float(np.std(fvds_list)),3)
                 calc_result[task]["fvd_traj"] = {"avg":fvd_traj_avg, "std":fvd_traj_std}
                 print(f"fvd_traj:\t{fvd_traj_avg}±{fvd_traj_std}")
                 
             calc_result[task]["fvd"] = {"avg":fvd}
-            print(f"fvd:\t{avg}")
+            print(f"fvd:\t{fvd}")
 
-with open(os.path.join(folder_path, '-'.join(tags)+'test_calc_scores.txt'), "w") as f:
+with open(os.path.join(folder_path, f'[{config_filename.replace(".yaml", "")}]_'+'-'.join(tags)+'_test_calc_scores.txt'), "w") as f:
     for task in calc_result.keys():
-        print(calc_result[task], file=f)
+        print(f"---{task}---", file=f)
+        for key in calc_result[task].keys():
+            print(f"{key}:\t{calc_result[task][key]}", file=f)
+
+
+# plot generated video
+with torch.no_grad():        
+    test_batch = test_batch[::config.eval.preds_per_test]   # ignore the repeated ones
+    
+    target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
+    target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
+    
+    for task in tags:
+        if task == "generation":
+            prob_mask_p = 1.0
+            prob_mask_f = 1.0
+        elif task == "interpolation":
+            prob_mask_p = 0.0
+            prob_mask_f = 0.0
+        elif task == "past_prediction":
+            prob_mask_p = 1.0
+            prob_mask_f = 0.0
+        elif task == "future_prediction":
+            prob_mask_p = 0.0
+            prob_mask_f = 1.0
+        
+        masked_conds_test, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
+        
+        # concat conditions (masked_past_frames + masked_future_frames)
+        if masked_conds_test[0] is not None:
+            if masked_conds_test[1] is not None:
+                # condition = cond_frames + future_frames
+                masked_conds_test = torch.cat(masked_conds_test, dim=1)
+            else:
+                # condition = cond_frames
+                masked_conds_test = masked_conds_test[0]
+        else:
+            if masked_conds_test[1] is not None:
+                # condition = future_frames
+                masked_conds_test = masked_conds_test[1]
+            else:
+                # condition = None
+                masked_conds_test = None
+                
+        init_batch = funcs.get_init_sample(model, target.shape)
+        # Get predicted x_0
+        pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
+        pred = inverse_data_transform(config, pred[-1]).cpu()
+        
+        # Calculate accuracy with target, pred
+        target = inverse_data_transform(config, target).cpu()
+        conds_test = [inverse_data_transform(config, d).cpu() if d is not None else None for d in conds_test]
+
+        funcs.plot_frames(conds_test, [target, pred], video_folder=folder_path, task_name=task, config_filename=config_filename.replace(".yaml", ""))
