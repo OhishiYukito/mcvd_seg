@@ -1,4 +1,6 @@
-results/
+results/**/*.pkl
+results/**/*.pt
+
 wandb/
 datasets/BAIR_h5/
 datasets/Cityscapes64_h5/
