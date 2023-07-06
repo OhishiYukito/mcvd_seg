@@ -3,11 +3,13 @@
 from datasets.bair import BAIRDataset
 from datasets.cityscapes import CityscapesDataset
 from datasets.kth64 import KTHDataset
+from datasets.stochastic_moving_mnist import StochasticMovingMNIST
+from datasets.davis import DavisHDF5Dataset
 
 import os
 import torch
 
-DATASETS = ['BAIR64', 'KTH64']
+DATASETS = ['BAIR64', 'KTH64', "STOCHASTICMOVINGMNIST"]
 
 def get_dataset(config, data_path=None):
     
@@ -31,10 +33,30 @@ def get_dataset(config, data_path=None):
             data_path = 'datasets/KTH64_h5'
         frames_per_sample = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
         train_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample, train=True,
-                             random_time=True, random_horizontal_flip=config.data.random_flip)
+                                   random_time=True, random_horizontal_flip=False)
         test_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample, train=False,
                                   random_time=True, random_horizontal_flip=False, total_videos=256)
+        
+    
+    elif config.data.dataset.upper() == "STOCHASTICMOVINGMNIST":
+        if data_path is None:
+            data_path = 'datasets/MNIST'
+        seq_len = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
+        train_dataset = StochasticMovingMNIST(data_path, train=True, seq_len=seq_len, num_digits=getattr(config.data, "num_digits", 2),
+                                              #step_length=config.data.step_length, 
+                                              with_target=False)
+        test_dataset = StochasticMovingMNIST(data_path, train=False, seq_len=seq_len, num_digits=getattr(config.data, "num_digits", 2),
+                                             #step_length=config.data.step_length, 
+                                             with_target=False, total_videos=256)
 
+    elif config.data.dataset.upper() == "DAVIS":
+        if data_path is None:
+            data_path = 'dataset/DAVIS_h5'
+        seq_len = config.data.num_frames
+        train_dataset = DavisHDF5Dataset(data_path=os.path.join(data_path, 'train'), frames_per_sample=seq_len, image_size=getattr(config.data, 'size', 64),
+                                         random_time=True, random_horizontal_flip=True)
+        test_dataset = DavisHDF5Dataset(data_path=os.path.join(data_path, 'test'), frames_per_sample=seq_len, image_size=getattr(config.data, 'size', 64),
+                                        random_time=True, random_horizontal_flip=False)
         
     
     return train_dataset, test_dataset

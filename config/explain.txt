@@ -6,6 +6,7 @@ device      # wheter to use GPU ['cuda', 'cpu']
 data
     - dataset       # dataset name
     - channels      # the number of input's channels
+    - size          # image size (default: 64), not essential
     - logit_transform(bool)     # whether to conduct logit transformation(?) to input
     - uniform_dequantization    # whether to conduct uniform dequantization
     - gaussian_dequantization   # whether to conduct gaussian dequantization
