@@ -510,16 +510,16 @@ class FuncsWithConfig:
         # Save gif
         if task_name=="future_prediction":          # Future Prediction
             imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_future-pred.gif"),
-                                [*gif_frames_cond, *gif_frames_pred], duration=1000 * 1/4)
+                                [*gif_frames_cond, *gif_frames_pred], duration=1000 * 1/4, loop=0)
         elif task_name=="interpolation":            # Interpolation
             imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_interp.gif"),
-                                [*gif_frames_cond, *gif_frames_pred, *gif_frames_futr], duration=1000 * 1/4)
+                                [*gif_frames_cond, *gif_frames_pred, *gif_frames_futr], duration=1000 * 1/4, loop=0)
         elif task_name=="generation":               # Generation
             imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_gen.gif"),
-                                gif_frames_pred, duration=1000 * 1/4)
+                                gif_frames_pred, duration=1000 * 1/4, loop=0)
         elif task_name=="past_prediction":          # Past Prediction
             imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_past-pred.gif"),
-                                [*gif_frames_pred, *gif_frames_futr], duration=1000 * 1/4)
+                                [*gif_frames_pred, *gif_frames_futr], duration=1000 * 1/4, loop=0)
 
         del gif_frames_cond, gif_frames_pred, gif_frames_pred2, gif_frames_pred3, gif_frames_futr
         

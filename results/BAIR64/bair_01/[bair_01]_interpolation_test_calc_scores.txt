@@ -1,0 +1,7 @@
+---interpolation---
+psnr:	{'avg': 17.664, 'std': 1.669}
+mse:	{'avg': 0.018, 'std': 0.007}
+ssim:	{'avg': 0.839, 'std': 0.064}
+lpips:	{'avg': 0.001, 'std': 0.002}
+fvd_traj:	{'avg': 710.351, 'std': 18.316}
+fvd:	{'avg': 678.523}

@@ -207,9 +207,10 @@ for epoch in range(config.train.num_epochs):
                       epoch,
                       step
                       ]
-            folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path)
+            folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path.replace(".yaml", ""))
             os.makedirs(folder_path, exist_ok=True)
             #dt = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M')
             #ckpt_path = os.path.join(folder_path, '-'.join(tags)+'__'+dt+'.pt')  # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2]__[DATETIME].pt'
             ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')          # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2].pt'
             torch.save(states, ckpt_path)
+print("finish train.py!")

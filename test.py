@@ -15,11 +15,12 @@ import numpy as np
 import pickle
 import argparse
 from tqdm import tqdm
+import copy
 
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_01.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_02.yaml')
 
 args = parser.parse_args()
 
@@ -47,8 +48,8 @@ funcs = FuncsWithConfig(config)
 
 # load the model
 tags = funcs.get_tags()
-folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path)
-ckpt_path = os.path.join(folder_path, f'[{args.config_path.replace(".yaml", "")}]_'+'-'.join(tags)+'.pt') 
+folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path.replace(".yaml", ""))
+ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt') 
 states = torch.load(ckpt_path)  # [model_params, optimizer_params, epoch, step]
 print(f"--------- load {ckpt_path} ---------------")
 model = UNet_DDPM(config)
@@ -79,7 +80,7 @@ result_base = {"mse": [],
                 "ssim":[],
                 "lpips":[],
                 "embeddings":{"target":[], "pred":[]},}
-result = {task: result_base.copy() for task in tags}
+result = {task: copy.deepcopy(result_base) for task in tags}
 #step = 0
 for test_batch in tqdm(test_dataloader):
     #if step==3:
@@ -211,10 +212,10 @@ with open(os.path.join(folder_path, f'[{args.config_path.replace(".yaml", "")}]_
 with torch.no_grad():        
     test_batch = test_batch[::config.eval.preds_per_test]   # ignore the repeated ones
     
-    target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
-    target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
-    
     for task in tags:
+        target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
+        target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
+        
         if task == "generation":
             prob_mask_p = 1.0
             prob_mask_f = 1.0
