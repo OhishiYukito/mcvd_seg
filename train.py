@@ -20,7 +20,7 @@ import os
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_01.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_04.yaml')
 
 args = parser.parse_args()
 
@@ -40,11 +40,17 @@ def my_collate(batch):
 
 # make the Dataset (Dataloader)
 # https://github.com/voletiv/mcvd-pytorch/blob/master/runners/ncsn_runner.py#L254
-train_dataset, test_dataset = get_dataset(config)
-##### TODO make Dataset and Dataloader for Segmentation #########################################
+train_dataset, test_dataset = get_dataset(config, segmentation=False)
+
 train_dataloader = DataLoader(train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=4)
 test_dataloader = DataLoader(test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4, drop_last=True, collate_fn=my_collate)
 test_iter = iter(test_dataloader)
+# make Dataset and Dataloader for Segmentation
+if 0.0<config.model.prob_mask_s<1.0:
+    seg_train_dataset, seg_test_dataset = get_dataset(config, segmentation=True)
+    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=4)
+    seg_test_dataloader = DataLoader(seg_test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4,
+                                     drop_last=True, collate_fn=my_collate)
 
 # make the model
 model = UNet_DDPM(config)#.to(config.device)
@@ -52,6 +58,11 @@ model.train()
 
 # function set
 funcs = FuncsWithConfig(config)
+if 0.0<config.model.prob_mask_s<1.0:
+    funcs.seg_train_dataloader = seg_train_dataloader
+    funcs.seg_test_dataloader = seg_test_dataloader
+    funcs.seg_train_iter = iter(seg_train_dataloader)
+    funcs.seg_test_iter = iter(seg_test_dataloader)
 
 # set the optimizer
 optimizer = get_optimizer(config, model.parameters())
@@ -94,31 +105,45 @@ for epoch in range(config.train.num_epochs):
         # separate frames to input(x), condition(cond)
         x, conds = funcs.separate_frames(batch)
         
-        # sampling t, z, and make noisy frames
-        t, z, x_t = funcs.get_noisy_frames(model, x)
-        
         # make condition frames (reshaping and masking)
         masked_conds, masks = funcs.get_masked_conds(conds)      # in:(batch_size, num_frames, C, H ,W) => out:(batch_size, num_frames*C, H, W)
         
-        # concat conditions (masked_past_frames + masked_future_frames)
+        # concat conditions (masked_past_frames + masked_future_frames + masked_seg_frames)
         if masked_conds[0] is not None:
             if masked_conds[1] is not None:
                 # condition = cond_frames + future_frames
-                masked_conds = torch.cat(masked_conds, dim=1)
+                masked_conds_train = torch.cat(masked_conds[:2], dim=1)
             else:
                 # condition = cond_frames
-                masked_conds = masked_conds[0]
+                masked_conds_train = masked_conds[0]
         else:
             if masked_conds[1] is not None:
                 # condition = future_frames
-                masked_conds = masked_conds[1]
+                masked_conds_train = masked_conds[1]
             else:
                 # condition = None
-                masked_conds = None
+                masked_conds_train = None
         
+        if masked_conds[2][0] is not None:
+            if masked_conds_train is not None:
+                # condition += seg_frames
+                masked_conds_train = torch.cat([masked_conds_train, masked_conds[2][0]], dim=1)
+            else:
+                # condition = seg_frames
+                masked_conds_train = masked_conds[2][0]
+                
+            # change input frames for segmentation
+            for i in range(len(x)):
+                if masks[2][i]==True:
+                    # replace input frames to 'segmentation' from 'frame_generation'
+                    x[i] = masked_conds[2][1][i].reshape(config.data.num_frames, -1, x[i].shape[-2], x[i].shape[-1])   # seg_annotaion
+            
+            
+        # sampling t, z, and make noisy frames
+        t, z, x_t = funcs.get_noisy_frames(model, x)
                 
         # predict 
-        predict = model(x_t, t, masked_conds)
+        predict = model(x_t, t, masked_conds_train)
         
         # Loss
         if L1:

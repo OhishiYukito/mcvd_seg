@@ -193,9 +193,12 @@ class UNet(nn.Module):
         self.rescaled = config.data.rescaled
 
         self.num_frames = num_frames = getattr(config.data, 'num_frames', 1)
-        self.num_frames_cond = num_frames_cond = getattr(config.data, 'num_frames_cond', 0) + getattr(config.data, 'num_frames_future', 0)
-        # TODO self.num_franes_cond = num_frames_cond = getattr(config.data, 'num_frames_cond', 0) + getattr(config.data, 'num_frames_future', 0) + num_frames 
-        # [past]+[future]+[segmented]
+        if self.config.model.prob_mask_s==1.0:
+            self.num_frames_cond = num_frames_cond = getattr(config.data, 'num_frames_cond', 0) + getattr(config.data, 'num_frames_future', 0)
+        else:
+            # [past]+[future]+[segmented]
+            self.num_franes_cond = num_frames_cond = getattr(config.data, 'num_frames_cond', 0) + getattr(config.data, 'num_frames_future', 0) + num_frames 
+        
 
         # TODO make sure channel is in dimensions 1 [bs x c x 32 x 32]
         ResnetBlock_ = partialclass(ResnetBlock, dropout=self.dropout, tembdim=ch * 4, conditional=time_conditional)

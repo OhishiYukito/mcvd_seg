@@ -5,6 +5,8 @@ device      # wheter to use GPU ['cuda', 'cpu']
 
 data
     - dataset       # dataset name
+    - seg_dataset   # dataset name for segmentation
+    - seg_dataset   # dataset name for segmentation
     - channels      # the number of input's channels
     - size          # image size (default: 64), not essential
     - logit_transform(bool)     # whether to conduct logit transformation(?) to input
@@ -15,7 +17,7 @@ data
     - num_frames            # the number of predicted num_frames (must be >=0)
     - num_frames_cond       # the number of previous frames (must be >=0)
     - num_frames_future     # the number of future frames (must be >=0)
-
+    # If NOT use frames, set 'num_frames_00'=0 instead of 'prob_mask_0'
 
 model
     - ngf           # the number of model's channels (output_channels of the first layer which input passes through)
@@ -30,6 +32,7 @@ model
     - prob_mask_p        # probability of masking previous frames
     - prob_mask_f        # probability of masking future frames
     - prob_mask_s        # probability of masking segmentated frames
+    # If NOT use frames, set 'num_frames_00'=0 instead of 'prob_mask_0'
 
 
 optim:

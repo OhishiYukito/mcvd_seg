@@ -107,20 +107,20 @@ for test_batch in tqdm(test_dataloader):
                 prob_mask_p = 0.0
                 prob_mask_f = 1.0
             
-            masked_conds_test, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
+            masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
             
             # concat conditions (masked_past_frames + masked_future_frames)
-            if masked_conds_test[0] is not None:
-                if masked_conds_test[1] is not None:
+            if masked_conds[0] is not None:
+                if masked_conds[1] is not None:
                     # condition = cond_frames + future_frames
-                    masked_conds_test = torch.cat(masked_conds_test, dim=1)
+                    masked_conds_test = torch.cat(masked_conds, dim=1)
                 else:
                     # condition = cond_frames
-                    masked_conds_test = masked_conds_test[0]
+                    masked_conds_test = masked_conds[0]
             else:
-                if masked_conds_test[1] is not None:
+                if masked_conds[1] is not None:
                     # condition = future_frames
-                    masked_conds_test = masked_conds_test[1]
+                    masked_conds_test = masked_conds[1]
                 else:
                     # condition = None
                     masked_conds_test = None
@@ -144,7 +144,7 @@ for test_batch in tqdm(test_dataloader):
                 else:
                     result[task][key].append(accuracies[key])
 
-# TODO save accuracies
+# save accuracies
 with open(os.path.join(folder_path, f'[{args.config_path.replace(".yaml", "")}]_'+'-'.join(tags)+'_test_results.pkl'), "wb") as f:
     pickle.dump(result, f)
 
@@ -152,7 +152,7 @@ def get_avg_std_from_best_score_list(best_score_list):
     avg, std = best_score_list.mean().item(), best_score_list.std().item()
     return round(avg,3), round(std,3)
 
-# TODO calculate accuracies average, std, (conf95(= 95% confidence interval))   
+# calculate accuracies average, std, (conf95(= 95% confidence interval))   
 print("======== calc avg, std ========")
 calc_result = {}
 for task in result.keys():
@@ -229,20 +229,20 @@ with torch.no_grad():
             prob_mask_p = 0.0
             prob_mask_f = 1.0
         
-        masked_conds_test, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
+        masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
         
         # concat conditions (masked_past_frames + masked_future_frames)
-        if masked_conds_test[0] is not None:
-            if masked_conds_test[1] is not None:
+        if masked_conds[0] is not None:
+            if masked_conds[1] is not None:
                 # condition = cond_frames + future_frames
-                masked_conds_test = torch.cat(masked_conds_test, dim=1)
+                masked_conds_test = torch.cat(masked_conds, dim=1)
             else:
                 # condition = cond_frames
-                masked_conds_test = masked_conds_test[0]
+                masked_conds_test = masked_conds[0]
         else:
-            if masked_conds_test[1] is not None:
+            if masked_conds[1] is not None:
                 # condition = future_frames
-                masked_conds_test = masked_conds_test[1]
+                masked_conds_test = masked_conds[1]
             else:
                 # condition = None
                 masked_conds_test = None

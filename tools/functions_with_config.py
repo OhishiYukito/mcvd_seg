@@ -16,7 +16,7 @@ from math import ceil
 
 import models.eval_models as eval_models
 from models.fvd.fvd import get_fvd_feats, load_i3d_pretrained, frechet_distance
-
+from datasets import data_transform
 
 class FuncsWithConfig:
     def __init__(self, config):
@@ -41,6 +41,7 @@ class FuncsWithConfig:
         assert self.prob_mask_s >= 0.0 and self.prob_mask_s <= 1.0, f"model.prob_mask_s is {self.prob_mask_s}! Set to 0.0<= prob_mask_s <=1.0 !" 
 
         self.config = config
+        
     
     def separate_frames(self, batch):
         """separate frames into input and condition frames
@@ -70,7 +71,7 @@ class FuncsWithConfig:
 
         Args:
             model : model which has attribute 'sigmas' or 'alphas' or more...
-            x : input frames (x_0)
+            x : input frames (x_0) [B, F, C, H, W]
             gamma : whether to use gamma distribution instead of normal distribution
         
         Returns:
@@ -111,16 +112,21 @@ class FuncsWithConfig:
         
         
     # masking condition frames
-    def get_masked_conds(self, conds, prob_mask_p=None, prob_mask_f=None):
+    def get_masked_conds(self, conds, prob_mask_p=None, prob_mask_f=None, prob_mask_s=None, mode='train'):
         """conduct masking condition frames
-            # conds[0] and conds[1] will be reshaped in this function ([B, F, C, H, W]->[B, F*C, H, W])
+            if use segmentation, its original frames are sampled in this function.\n 
+            conds[0] and conds[1] will be reshaped in this function ([B, F, C, H, W]->[B, F*C, H, W])
 
         Args:
             conds: condition frames ([cond_previous, cond_future])
                    cond.shape = (batch, num_frames, C, H, W)
+            prob_mask_p:
+            prob_mask_f:
+            prob_mask_s:
+            mode: only be used with segmentation
         
         Returns:
-            masked_conds: masked condition frames ([masked_previous, masked_future])
+            masked_conds: masked condition frames ([masked_previous, masked_future, (masked_seg, seg_ann)])
                           cond.shape = (batch, num_frames*C, H, W)
             masks: used masks (has values only if NOT deterministic (=> [0.0 < prob_mask < 1.0]))
         """
@@ -129,9 +135,12 @@ class FuncsWithConfig:
         
         prob_mask_p = prob_mask_p if prob_mask_p is not None else self.prob_mask_p
         prob_mask_f = prob_mask_f if prob_mask_f is not None else self.prob_mask_f
-
+        prob_mask_s = prob_mask_s if prob_mask_s is not None else self.prob_mask_s
+        
+        
+        # Masking previous frames
         if self.num_cond>0 and conds[0] is not None:
-            # (batch_size, num_frames, C, H, W) -> (batch_size, num_frames*C, H, W)
+            # (B, F, C, H, W) -> (B, F*C, H, W)
             conds[0] = conds[0].reshape(len(conds[0]), -1, conds[0].shape[-2], conds[0].shape[-1])   
 
             if prob_mask_p == 0.0:
@@ -148,10 +157,11 @@ class FuncsWithConfig:
         else:
             masked_cond = None
         
-        # masking future frames
+        
+        # Masking future frames
         mask_f = None
         if self.num_future>0 and conds[1] is not None:
-            # (batch_size, num_frames, C, H, W) -> (batch_size, num_frames*C, H, W)
+            # (B, F, C, H, W) -> (B, F*C, H, W)
             conds[1] = conds[1].reshape(len(conds[1]), -1, conds[0].shape[-2], conds[0].shape[-1])
             
             if prob_mask_f == 0.0:
@@ -168,13 +178,59 @@ class FuncsWithConfig:
         else:
             masked_future = None
             
-        # masking segmentation frames
-
-        return [masked_cond, masked_future], [mask_p, mask_f]
+            
+        # Masking segmentation frames
+        if 0.0<=self.prob_mask_s<1.0:     
+            # if conduct 'segmentatioin' in 'train', conds=[past, future, seg].
+            # when 'frame_generation' in 'test', prob_mask_s was set to 1.0, but we have to set conds=[past, future, seg(zeros)] 
+             
+            # prepare the original data
+            try:
+                seg_origin, seg_ann = next(self.seg_train_iter) if mode=='train' else next(self.seg_test_iter)
+            except StopIteration:
+                if mode=='train':
+                    self.seg_train_iter = iter(self.seg_train_dataloader)
+                    seg_origin, seg_ann = next(self.seg_train_iter)
+                elif mode=='test':
+                    self.seg_test_iter = iter(self.seg_test_dataloader)
+                    seg_origin, seg_ann = next(self.seg_test_iter)
+            seg_origin, seg_ann = data_transform(self.config, seg_origin), data_transform(self.config, seg_ann)
+            # (B,F,C,H,W) -> (B, F*C, H, W)
+            seg_origin = seg_origin.reshape(len(seg_origin), -1, seg_origin.shape[-2], seg_origin.shape[-1]).to(self.config.device)
+            seg_ann = seg_ann.reshape(len(seg_ann), -1, seg_ann.shape[-2], seg_ann.shape[-1]).to(self.config.device)
+            
+            if 0.0<=prob_mask_s<1.0:
+                mask_s = torch.rand(seg_origin.shape[0], device=seg_origin.device) > prob_mask_s
+                if prob_mask_s==0.0:
+                    # NOT masking
+                    masked_seg = seg_origin  # frames before be segmented
+                else:
+                    # random masking    
+                    masked_seg = seg_origin * mask_s.reshape(-1, 1, 1, 1)
+                    mask_s = mask_s.to(torch.int32)
+            elif prob_mask_s==1.0:
+                # masking
+                mask_s, seg_ann = None, None
+                masked_seg = torch.zeros(seg_origin.shape, device=seg_origin.device)
+                
+        elif self.prob_mask_s==1.0:
+            # NOT use segmentation
+            mask_s, masked_seg, seg_ann = None, None, None
+            
+            
+        # When 'segmentation', 'frame generation task' is deactivate
+        if mask_s is not None:
+            inversed_mask_s = torch.tensor(list(map(lambda x: not x, mask_s))).to(device=self.config.device)
+            if masked_cond is not None:
+                masked_cond = masked_cond * inversed_mask_s.reshape(-1,1,1,1)
+                mask_p = inversed_mask_s.to(torch.int32)
+            if masked_future is not None:
+                masked_future = masked_future * inversed_mask_s.reshape(-1,1,1,1)
+                mask_f = inversed_mask_s.to(torch.int32)
+        
+        return [masked_cond, masked_future, (masked_seg, seg_ann)], [mask_p, mask_f, mask_s]
     
-    
-    #def plot_image(self):
-    
+  
     
     # get tags representing tasks that the model can perform
     def get_tags(self):

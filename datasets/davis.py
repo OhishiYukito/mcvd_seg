@@ -3,7 +3,7 @@ from torchvision import transforms
 import numpy as np
 import torch
 
-from h5 import HDF5Maker, HDF5Dataset
+from .h5 import HDF5Maker, HDF5Dataset
 
 
 class DavisHDF5Maker(HDF5Maker):
@@ -26,10 +26,11 @@ class DavisHDF5Maker(HDF5Maker):
             
 class DavisHDF5Dataset(Dataset):
     
-    def __init__(self, data_path, frames_per_sample=5, image_size=64, random_time=True, random_horizontal_flip=True, color_jitter=0,
+    def __init__(self, data_path, batch_size, frames_per_sample=5, image_size=64, random_time=True, random_horizontal_flip=True, color_jitter=0,
                  total_videos=-1):
 
         self.data_path = data_path
+        self.batch_size = batch_size
         self.frames_per_sample = frames_per_sample
         self.image_size = image_size
         self.random_time = random_time
@@ -45,7 +46,7 @@ class DavisHDF5Dataset(Dataset):
         print(f"Dataset length: {self.__len__()}")
 
     def __len__(self):
-        return self.total_videos if self.total_videos > 0 else len(self.videos_ds)
+        return self.total_videos if self.total_videos > 0 else max(len(self.videos_ds), self.batch_size)
     
     def max_index(self):
         return len(self.videos_ds)
@@ -66,7 +67,7 @@ class DavisHDF5Dataset(Dataset):
                 img_ann = f['annotations'][str(idx_in_shard)][str(i)][()]
                 # resize
                 img, img_ann = transforms.Resize(self.image_size)(transforms.ToTensor()(img)), transforms.Resize(self.image_size)(transforms.ToTensor()(img_ann))
-                plt.imshow(img.permute(1,2,0))
+                #plt.imshow(img.permute(1,2,0))
                 img, img_ann = transforms.CenterCrop(self.image_size)(img), transforms.CenterCrop(self.image_size)(img_ann)
                 # random flip
                 arr = transforms.RandomHorizontalFlip(flip_p)(img)
