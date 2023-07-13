@@ -85,12 +85,13 @@ else:
 tags = funcs.get_tags()
 
 # training
-wandb.init(
-    project="MCVD with Seg",
-    config=dict_config,
-    name=args.config_path,
-    tags=tags,
-)
+if not __debug__:
+    wandb.init(
+        project="MCVD with Seg",
+        config=dict_config,
+        name=args.config_path,
+        tags=tags,
+    )
 step = 0
 for epoch in range(config.train.num_epochs):
     print(f"----------------- ↓ epoch {epoch}/{config.train.num_epochs} ---------------------")
@@ -219,23 +220,23 @@ for epoch in range(config.train.num_epochs):
                         accuracies = funcs.get_accuracy(pred, target, conds_test)
                         # TODO save accuracies
                 
-                                
-            # logging with wandb
-            wandb.log(data={"loss": loss, "step[epoch]": epoch+(i+1)/len(train_dataloader)},
-                      step= step
-                      )
-            
-            
-            # Save model
-            states = [model.state_dict(),
-                      optimizer.state_dict(),
-                      epoch,
-                      step
-                      ]
-            folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path.replace(".yaml", ""))
-            os.makedirs(folder_path, exist_ok=True)
-            #dt = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M')
-            #ckpt_path = os.path.join(folder_path, '-'.join(tags)+'__'+dt+'.pt')  # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2]__[DATETIME].pt'
-            ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')          # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2].pt'
-            torch.save(states, ckpt_path)
+            if not __debug__:                    
+                # logging with wandb
+                wandb.log(data={"loss": loss, "step[epoch]": epoch+(i+1)/len(train_dataloader)},
+                        step= step
+                        )
+                
+                
+                # Save model
+                states = [model.state_dict(),
+                        optimizer.state_dict(),
+                        epoch,
+                        step
+                        ]
+                folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path.replace(".yaml", ""))
+                os.makedirs(folder_path, exist_ok=True)
+                #dt = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M')
+                #ckpt_path = os.path.join(folder_path, '-'.join(tags)+'__'+dt+'.pt')  # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2]__[DATETIME].pt'
+                ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')          # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2].pt'
+                torch.save(states, ckpt_path)
 print("finish train.py!")

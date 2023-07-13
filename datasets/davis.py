@@ -65,9 +65,10 @@ class DavisHDF5Dataset(Dataset):
             for i in range(time_idx, min(time_idx + self.frames_per_sample, video_len)):
                 img = f['videos'][str(idx_in_shard)][str(i)][()]
                 img_ann = f['annotations'][str(idx_in_shard)][str(i)][()]
-                # resize
+                # resize (by resize, value range will be change: {0 or 1} -> [0~1])
                 img, img_ann = transforms.Resize(self.image_size)(transforms.ToTensor()(img)), transforms.Resize(self.image_size)(transforms.ToTensor()(img_ann))
                 #plt.imshow(img.permute(1,2,0))
+                #plt.imshow(img_ann.permute(1,2,0))
                 img, img_ann = transforms.CenterCrop(self.image_size)(img), transforms.CenterCrop(self.image_size)(img_ann)
                 # random flip
                 arr = transforms.RandomHorizontalFlip(flip_p)(img)

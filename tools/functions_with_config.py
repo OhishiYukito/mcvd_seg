@@ -260,6 +260,8 @@ class FuncsWithConfig:
                     tags.append("past_prediction")
                 if 0<self.prob_mask_p<=1 and 0<self.prob_mask_f<=1:
                     tags.append("generation")
+        if 0.0<=self.prob_mask_s<1.0:
+            tags.append("segmentation")
         
         return tags
                 
@@ -510,12 +512,13 @@ class FuncsWithConfig:
         """
    
         gif_frames_cond = []
-        gif_frames_pred, gif_frames_pred2, gif_frames_pred3 = [], [], []
+        gif_frames_pred= []
         gif_frames_futr = []
 
         # we show conditional frames, and real&pred side-by-side
         # past frames
-        if conds[0] is not None:
+        if conds[0] is not None and torch.count_nonzero(conds[0])!=0:
+            # there are past frames, and they are not be masked
             cond = conds[0]
             for t in range(conds[0].shape[1]//self.config.data.channels):
                 cond_t = cond[:, t*self.config.data.channels:(t+1)*self.config.data.channels]     # BCHW
@@ -549,7 +552,8 @@ class FuncsWithConfig:
             del frame, gif_frame
         
         # future frames
-        if conds[1] is not None:
+        if conds[1] is not None and torch.count_nonzero(conds[1])!=0:
+            # there are future frames, and they are not be masked
             futr = conds[1]
             for t in range(futr.shape[1]//self.config.data.channels):
                 futr_t = futr[:, t*self.config.data.channels:(t+1)*self.config.data.channels]     # BCHW
@@ -562,6 +566,10 @@ class FuncsWithConfig:
                 if t == futr.shape[1]//self.config.data.channels - 1:
                     gif_frames_futr.append((gif_frame*255).astype('uint8'))
                 del frame, gif_frame
+        
+        #if conds[2] is not None and torch.count_nonzero(conds[2])!=0:
+            # there are segmentation frames, and they are not be masked
+            
                 
         # Save gif
         if task_name=="future_prediction":          # Future Prediction
@@ -576,8 +584,11 @@ class FuncsWithConfig:
         elif task_name=="past_prediction":          # Past Prediction
             imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_past-pred.gif"),
                                 [*gif_frames_pred, *gif_frames_futr], duration=1000 * 1/4, loop=0)
+        elif task_name=='segmentation':
+            ###TODO make segmentation gif #########################################
+            pass
 
-        del gif_frames_cond, gif_frames_pred, gif_frames_pred2, gif_frames_pred3, gif_frames_futr
+        del gif_frames_cond, gif_frames_pred, gif_frames_futr
         
         # Save stretch frames
         def stretch_image(X, ch, imsize):
