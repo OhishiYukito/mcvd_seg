@@ -19,6 +19,10 @@ def get_dataset(config, segmentation=False, data_path=None):
     if segmentation:
         if config.data.seg_dataset.upper() == "DAVIS":
             if data_path is None:
+                data_path = 'datasets/DAVIS64_h5'
+            if getattr(config.data, 'size', 64)==64:
+                data_path = 'datasets/DAVIS64_h5'
+            else:
                 data_path = 'datasets/DAVIS_h5'
             seq_len = config.data.num_frames
             train_dataset = DavisHDF5Dataset(data_path=os.path.join(data_path, 'train'), batch_size=config.train.batch_size, frames_per_sample=seq_len, image_size=getattr(config.data, 'size', 64),

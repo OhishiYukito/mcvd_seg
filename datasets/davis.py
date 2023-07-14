@@ -65,11 +65,15 @@ class DavisHDF5Dataset(Dataset):
             for i in range(time_idx, min(time_idx + self.frames_per_sample, video_len)):
                 img = f['videos'][str(idx_in_shard)][str(i)][()]
                 img_ann = f['annotations'][str(idx_in_shard)][str(i)][()]
-                # resize (by resize, value range will be change: {0 or 1} -> [0~1])
-                img, img_ann = transforms.Resize(self.image_size)(transforms.ToTensor()(img)), transforms.Resize(self.image_size)(transforms.ToTensor()(img_ann))
-                #plt.imshow(img.permute(1,2,0))
-                #plt.imshow(img_ann.permute(1,2,0))
-                img, img_ann = transforms.CenterCrop(self.image_size)(img), transforms.CenterCrop(self.image_size)(img_ann)
+                
+                img, img_ann = transforms.ToTensor()(img), transforms.ToTensor()(img_ann)
+                # Images has been resized in 'davis_convert.py'
+                ## resize (by resize, value range will be change: {0 or 1} -> [0~1])
+                #img, img_ann = transforms.Resize(self.image_size)(transforms.ToTensor()(img)), transforms.Resize(self.image_size)(transforms.ToTensor()(img_ann))
+                ##plt.imshow(img.permute(1,2,0))
+                ##plt.imshow(img_ann.permute(1,2,0))
+                #img, img_ann = transforms.CenterCrop(self.image_size)(img), transforms.CenterCrop(self.image_size)(img_ann)
+                
                 # random flip
                 arr = transforms.RandomHorizontalFlip(flip_p)(img)
                 arr_ann = transforms.RandomHorizontalFlip(flip_p)(img_ann)
@@ -87,8 +91,8 @@ class DavisHDF5Dataset(Dataset):
 import matplotlib.pyplot as plt
 
 if __name__ == '__main__':
-    path = '/home/ohishiyukito/Documents/GraduationResearch/DiffModel_with_Seg/datasets/DAVIS_h5/train'
-    dataset = DavisHDF5Dataset(path)
+    path = '/home/ohishiyukito/Documents/GraduationResearch/DiffModel_with_Seg/datasets/DAVIS64_h5/train'
+    dataset = DavisHDF5Dataset(path, 100)
     for sample, sample_ann in dataset:
         sample = sample[0].permute(1,2,0)
         sample_ann = sample_ann[0].permute(1,2,0)
