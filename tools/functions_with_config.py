@@ -522,6 +522,7 @@ class FuncsWithConfig:
         gif_frames_cond = []
         gif_frames_pred= []
         gif_frames_futr = []
+        gif_frames_seg = []
 
         # we show conditional frames, and real&pred side-by-side
         # past frames
@@ -575,9 +576,22 @@ class FuncsWithConfig:
                     gif_frames_futr.append((gif_frame*255).astype('uint8'))
                 del frame, gif_frame
         
-        #if conds[2] is not None and torch.count_nonzero(conds[2])!=0:
+        if conds[2] is not None and torch.count_nonzero(conds[2])!=0:
             # there are segmentation frames, and they are not be masked
-            
+            seg = conds[2]
+            for t in range(seg.shape[1]//self.config.data.channels):
+                seg_t = seg[:, t*self.config.data.channels:(t+1)*self.config.data.channels]
+                real_t = real[:, t*self.config.data.channels:(t+1)*self.config.data.channels]     # BCHW
+                pred_t = pred[:, t*self.config.data.channels:(t+1)*self.config.data.channels]
+                frame = torch.cat([seg_t, 0.5*torch.ones(*seg_t.shape[:-1], 2), real_t, 0.5*torch.ones(*seg_t.shape[:-1], 2), pred_t], dim=-1)
+                frame = frame.permute(0,2,3,1).numpy()
+                frame = np.stack([putText(f.copy(), f"{t+1:2d}f", (4, 15), 0, 0.5, (1,1,1), 1) for f in frame])
+                nrow = ceil(np.sqrt(3*seg.shape[0])/3)
+                gif_frame = make_grid(torch.from_numpy(frame).permute(0, 3, 1, 2), nrow=nrow, padding=6, pad_value=0.5).permute(1, 2, 0).numpy()  # HWC
+                gif_frames_seg.append((gif_frame*255).astype('uint8'))
+                if t == seg.shape[1]//self.config.data.channels - 1:
+                    gif_frames_seg.append((gif_frame*255).astype('uint8'))
+                del frame, gif_frame
                 
         # Save gif
         if task_name=="future_prediction":          # Future Prediction
@@ -593,10 +607,10 @@ class FuncsWithConfig:
             imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_past-pred.gif"),
                                 [*gif_frames_pred, *gif_frames_futr], duration=1000 * 1/4, loop=0)
         elif task_name=='segmentation':
-            ###TODO make segmentation gif #########################################
-            pass
-
-        del gif_frames_cond, gif_frames_pred, gif_frames_futr
+            imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_seg.gif"),
+                                [*gif_frames_seg], duration=1000 * 1/4, loop=0)
+            
+        del gif_frames_cond, gif_frames_pred, gif_frames_futr, gif_frames_seg
         
         # Save stretch frames
         def stretch_image(X, ch, imsize):
@@ -669,6 +683,22 @@ class FuncsWithConfig:
             nrow = ceil(np.sqrt((self.num_pred)*pred.shape[0])/(self.num_pred))
             image_grid = make_grid(data, nrow=nrow, padding=6, pad_value=0.5)
             save_image(image_grid, os.path.join(video_folder, f"[{config_filename}]_videos_stretch_gen.png"))
+            
+        def save_seg(pred, real):
+            # save frames as dict
+            torch.save({"seg": seg, "pred": pred, "real": real},
+                            os.path.join(video_folder, f"[{config_filename}]_videos_seg.pt"))
+            seg_im = stretch_image(seg, self.config.data.channels, seg.shape[-1])
+            pred_im = stretch_image(pred, self.config.data.channels, pred.shape[-1])
+            real_im = stretch_image(real, self.config.data.channels, real.shape[-1])
+            padding_ver = 0.5*torch.ones(*real_im.shape[:-2], 2, real_im.shape[-1])
+            data = torch.cat([seg_im, padding_ver, real_im, padding_ver, pred_im], dim=-2)
+            # Save stretched image
+            # Set 'nrow' as follows to make the image shape closer to a square
+            nrow = ceil(np.sqrt((self.num_pred)*pred.shape[0])/(self.num_pred))
+            image_grid = make_grid(data, nrow=nrow, padding=6, pad_value=0.5)
+            save_image(image_grid, os.path.join(video_folder, f"[{config_filename}]_videos_stretch_seg.png"))
+
 
         if task_name=="past_prediction":
             save_past_pred(pred, real)
@@ -681,3 +711,6 @@ class FuncsWithConfig:
 
         elif task_name=="generation":
             save_gen(pred)
+        
+        elif task_name=="segmentation":
+            save_seg(pred, real)
