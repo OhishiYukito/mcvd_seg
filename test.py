@@ -40,11 +40,21 @@ def my_collate(batch):
 # make the Dataset (Dataloader)
 # https://github.com/voletiv/mcvd-pytorch/blob/master/runners/ncsn_runner.py#L254
 _, test_dataset = get_dataset(config)
-##### TODO make Dataset and Dataloader for Segmentation #########################################
 test_dataloader = DataLoader(test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4, drop_last=True, collate_fn=my_collate)
+if 0.0<config.model.prob_mask_s<1.0:
+    seg_train_dataset, seg_test_dataset = get_dataset(config, segmentation=True)
+    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=4)
+    seg_test_dataloader = DataLoader(seg_test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4,
+                                     drop_last=True, collate_fn=my_collate)
+
 
 # function set
 funcs = FuncsWithConfig(config)
+if 0.0<config.model.prob_mask_s<1.0:
+    funcs.seg_train_dataloader = seg_train_dataloader
+    funcs.seg_test_dataloader = seg_test_dataloader
+    funcs.seg_train_iter = iter(seg_train_dataloader)
+    funcs.seg_test_iter = iter(seg_test_dataloader)
 
 # load the model
 tags = funcs.get_tags()
@@ -80,6 +90,11 @@ result_base = {"mse": [],
                 "ssim":[],
                 "lpips":[],
                 "embeddings":{"target":[], "pred":[]},}
+################################################################
+# TODO(?) calculate segmentation accuracy ######################
+#result_seg_base = { "j mean":     
+#}
+###############################################################
 result = {task: copy.deepcopy(result_base) for task in tags}
 #step = 0
 for test_batch in tqdm(test_dataloader):
@@ -91,29 +106,37 @@ for test_batch in tqdm(test_dataloader):
         test_batch = data_transform(config, test_batch)
         
         target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
-        target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
+        target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])    # (B, F*C, H, W)
         
         for task in tags:
             if task == "generation":
                 prob_mask_p = 1.0
                 prob_mask_f = 1.0
+                prob_mask_s = 1.0
             elif task == "interpolation":
                 prob_mask_p = 0.0
                 prob_mask_f = 0.0
+                prob_mask_s = 1.0
             elif task == "past_prediction":
                 prob_mask_p = 1.0
                 prob_mask_f = 0.0
+                prob_mask_s = 1.0
             elif task == "future_prediction":
                 prob_mask_p = 0.0
                 prob_mask_f = 1.0
+                prob_mask_s = 1.0
+            elif task == "segmentation":
+                prob_mask_p = 1.0
+                prob_mask_f = 1.0
+                prob_mask_s = 0.0
             
-            masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
+            masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s)
             
             # concat conditions (masked_past_frames + masked_future_frames)
             if masked_conds[0] is not None:
                 if masked_conds[1] is not None:
                     # condition = cond_frames + future_frames
-                    masked_conds_test = torch.cat(masked_conds, dim=1)
+                    masked_conds_test = torch.cat(masked_conds[:2], dim=1)
                 else:
                     # condition = cond_frames
                     masked_conds_test = masked_conds[0]
@@ -124,11 +147,29 @@ for test_batch in tqdm(test_dataloader):
                 else:
                     # condition = None
                     masked_conds_test = None
+            
+            if masked_conds[2][0] is not None:
+                if masked_conds_test is not None:
+                    # condition += seg_frames
+                    masked_conds_test = torch.cat([masked_conds_test, masked_conds[2][0]], dim=1)
+                else:
+                    # condition = seg_frames
+                    masked_conds_test = masked_conds[2][0]
+                    
+                # change input frames for segmentation
+                for i in range(len(target)):
+                    if masks[2][i]==True:
+                        # replace input frames to 'segmentation' from 'frame_generation'
+                        target[i] = masked_conds[2][1][i].reshape(config.data.num_frames, -1, target[i].shape[-2], target[i].shape[-1])   # seg_annotaion
                     
             init_batch = funcs.get_init_sample(model, target.shape)
             # Get predicted x_0
             pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
             pred = inverse_data_transform(config, pred[-1])
+            #if task == "segmentation":
+            #    # convert to 0 or 1
+            #    pred = pred > 0.5
+            #    pred = pred.to(torch.int32)
             
             # Calculate accuracy with target, pred
             target = inverse_data_transform(config, target)
@@ -215,27 +256,35 @@ with torch.no_grad():
     for task in tags:
         target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
         target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
-        
+
         if task == "generation":
             prob_mask_p = 1.0
             prob_mask_f = 1.0
+            prob_mask_s = 1.0
         elif task == "interpolation":
             prob_mask_p = 0.0
             prob_mask_f = 0.0
+            prob_mask_s = 1.0
         elif task == "past_prediction":
             prob_mask_p = 1.0
             prob_mask_f = 0.0
+            prob_mask_s = 1.0
         elif task == "future_prediction":
             prob_mask_p = 0.0
             prob_mask_f = 1.0
+            prob_mask_s = 1.0
+        elif task == "segmentation":
+            prob_mask_p = 1.0
+            prob_mask_f = 1.0
+            prob_mask_s = 0.0
         
-        masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f)
+        masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s)
         
         # concat conditions (masked_past_frames + masked_future_frames)
         if masked_conds[0] is not None:
             if masked_conds[1] is not None:
                 # condition = cond_frames + future_frames
-                masked_conds_test = torch.cat(masked_conds, dim=1)
+                masked_conds_test = torch.cat(masked_conds[:2], dim=1)
             else:
                 # condition = cond_frames
                 masked_conds_test = masked_conds[0]
@@ -246,6 +295,20 @@ with torch.no_grad():
             else:
                 # condition = None
                 masked_conds_test = None
+        
+        if masked_conds[2][0] is not None:
+            if masked_conds_test is not None:
+                # condition += seg_frames
+                masked_conds_test = torch.cat([masked_conds_test, masked_conds[2][0]], dim=1)
+            else:
+                # condition = seg_frames
+                masked_conds_test = masked_conds[2][0]
+                
+            # change input frames for segmentation
+            for i in range(len(target)):
+                if masks[2][i]==True:
+                    # replace input frames to 'segmentation' from 'frame_generation'
+                    target[i] = masked_conds[2][1][i].reshape(config.data.num_frames, -1, target[i].shape[-2], target[i].shape[-1])   # seg_annotaion
                 
         init_batch = funcs.get_init_sample(model, target.shape)
         # Get predicted x_0
@@ -254,6 +317,18 @@ with torch.no_grad():
         
         # Calculate accuracy with target, pred
         target = inverse_data_transform(config, target).cpu()
-        conds_test = [inverse_data_transform(config, d).cpu() if d is not None else None for d in conds_test]
+        conds_for_plot = []
+        for i, d in enumerate(masked_conds):
+            if i==2:
+                if d[0] is not None:
+                    conds_for_plot.append(inverse_data_transform(config, d[0]).cpu())
+                else:
+                    conds_for_plot.append(None)
+            else:
+                if d is not None:
+                    conds_for_plot.append(inverse_data_transform(config, d).cpu())
+                else:
+                    conds_for_plot.append(None)
+        #masked_conds = [inverse_data_transform(config, d).cpu() if d is not None else None for d in masked_conds]
 
-        funcs.plot_frames(conds_test, [target, pred], video_folder=folder_path, task_name=task, config_filename=args.config_path.replace(".yaml", ""))
+        funcs.plot_frames(conds_for_plot, [target, pred], video_folder=folder_path, task_name=task, config_filename=args.config_path.replace(".yaml", ""))
