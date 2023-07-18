@@ -16,6 +16,7 @@ from tqdm import tqdm
 import wandb
 import os
 #import datetime
+import time
 
 
 # get args
@@ -48,7 +49,7 @@ test_iter = iter(test_dataloader)
 # make Dataset and Dataloader for Segmentation
 if 0.0<config.model.prob_mask_s<1.0:
     seg_train_dataset, seg_test_dataset = get_dataset(config, segmentation=True)
-    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=4)
+    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=100)
     seg_test_dataloader = DataLoader(seg_test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4,
                                      drop_last=True, collate_fn=my_collate)
 
@@ -95,8 +96,12 @@ if not __debug__:
 step = 0
 for epoch in range(config.train.num_epochs):
     print(f"----------------- ↓ epoch {epoch}/{config.train.num_epochs} ---------------------")
+    #if epoch==1:
+    #    break
     for i, batch in enumerate(tqdm(train_dataloader)):
-        
+    #    start_loop = time.time()
+    #    if i==3:
+    #        break
         step += 1
         
         optimizer.zero_grad()
@@ -105,10 +110,12 @@ for epoch in range(config.train.num_epochs):
         batch = data_transform(config, batch)
         # separate frames to input(x), condition(cond)
         x, conds = funcs.separate_frames(batch)
-        
+
         # make condition frames (reshaping and masking)
+        #start = time.time()
         masked_conds, masks = funcs.get_masked_conds(conds)      # in:(batch_size, num_frames, C, H ,W) => out:(batch_size, num_frames*C, H, W)
-        
+        #print("get_masked_conds(): {} [s]".format(time.time()-start))
+
         # concat conditions (masked_past_frames + masked_future_frames + masked_seg_frames)
         if masked_conds[0] is not None:
             if masked_conds[1] is not None:
@@ -134,19 +141,23 @@ for epoch in range(config.train.num_epochs):
                 masked_conds_train = masked_conds[2][0]
                 
             # change input frames for segmentation
-            for i in range(len(x)):
-                if masks[2][i]==True:
+            for index in range(len(x)):
+                if masks[2][index]==True:
                     # replace input frames to 'segmentation' from 'frame_generation'
-                    x[i] = masked_conds[2][1][i].reshape(config.data.num_frames, -1, x[i].shape[-2], x[i].shape[-1])   # seg_annotaion
-            
-            
-        # sampling t, z, and make noisy frames
-        t, z, x_t = funcs.get_noisy_frames(model, x)
-                
-        # predict 
-        predict = model(x_t, t, masked_conds_train)
+                    x[index] = masked_conds[2][1][index].reshape(config.data.num_frames, -1, x[index].shape[-2], x[index].shape[-1])   # seg_annotaion
         
+        # sampling t, z, and make noisy frames    
+        #start = time.time()
+        t, z, x_t = funcs.get_noisy_frames(model, x)
+        #print("get_noisy_frames(): {} [s]".format(time.time() - start))
+
+        # predict
+        #start = time.time()
+        predict = model(x_t, t, masked_conds_train)
+        #print("predict: {} [s]".format(time.time()-start))
+
         # Loss
+        #start = time.time()
         if L1:
             def pow_(x):
                 return x.abs()
@@ -158,6 +169,7 @@ for epoch in range(config.train.num_epochs):
         
         loss.backward()
         optimizer.step()
+        #print("get loss ~ backward: {} [s]".format(time.time()-start))
 
         # Log
         if config.train.logging and i % config.train.log_interval == 0:
@@ -239,4 +251,6 @@ for epoch in range(config.train.num_epochs):
                 #ckpt_path = os.path.join(folder_path, '-'.join(tags)+'__'+dt+'.pt')  # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2]__[DATETIME].pt'
                 ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt')          # 'results/[DATASET]/[CONFIG]/[TASK1]-[TASK2].pt'
                 torch.save(states, ckpt_path)
+        
+        #print("one train_step: {} [s]".format(time.time()-start_loop))
 print("finish train.py!")

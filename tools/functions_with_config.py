@@ -17,6 +17,7 @@ from math import ceil
 import models.eval_models as eval_models
 from models.fvd.fvd import get_fvd_feats, load_i3d_pretrained, frechet_distance
 from datasets import data_transform
+import time
 
 class FuncsWithConfig:
     def __init__(self, config):
@@ -137,7 +138,6 @@ class FuncsWithConfig:
         prob_mask_f = prob_mask_f if prob_mask_f is not None else self.prob_mask_f
         prob_mask_s = prob_mask_s if prob_mask_s is not None else self.prob_mask_s
         
-        
         # Masking previous frames
         if self.num_cond>0 and conds[0] is not None:
             # (B, F, C, H, W) -> (B, F*C, H, W)
@@ -156,7 +156,6 @@ class FuncsWithConfig:
                 masked_cond = torch.zeros(conds[0].shape, device=conds[0].device)
         else:
             masked_cond = None
-        
         
         # Masking future frames
         mask_f = None
@@ -178,13 +177,15 @@ class FuncsWithConfig:
         else:
             masked_future = None
             
-            
         # Masking segmentation frames
+        #start_seg = time.time()
         if 0.0<=self.prob_mask_s<1.0:     
             # if conduct 'segmentatioin' in 'train', conds=[past, future, seg].
             # when 'frame_generation' in 'test', prob_mask_s was set to 1.0, but we have to set conds=[past, future, seg(zeros)] 
              
             # prepare the original data
+            #start = time.time()
+            # TODO improve davis dataset __get__ to be more quickly ########################
             try:
                 seg_origin, seg_ann = next(self.seg_train_iter) if mode=='train' else next(self.seg_test_iter)
             except StopIteration:
@@ -194,6 +195,7 @@ class FuncsWithConfig:
                 elif mode=='test':
                     self.seg_test_iter = iter(self.seg_test_dataloader)
                     seg_origin, seg_ann = next(self.seg_test_iter)
+            #print("get seg frame: {} [s]".format(time.time()-start))
             seg_origin, seg_ann = data_transform(self.config, seg_origin), data_transform(self.config, seg_ann)
             # (B,F,C,H,W) -> (B, F*C, H, W)
             seg_origin = seg_origin.reshape(len(seg_origin), -1, seg_origin.shape[-2], seg_origin.shape[-1]).to(self.config.device)
@@ -216,10 +218,16 @@ class FuncsWithConfig:
         elif self.prob_mask_s==1.0:
             # NOT use segmentation
             mask_s, masked_seg, seg_ann = None, None, None
-            
+        #print("masking s-frame: {} [s]".format(time.time()-start_seg))   
             
         # When 'segmentation', 'frame generation task' is deactivate
         if mask_s is not None:
+            base = masked_cond if masked_cond is not None else masked_future
+            if len(base)<len(masked_seg):
+                # drop_out
+                masked_seg = masked_seg[:len(base)]
+                seg_ann = seg_ann[:len(base)]
+                mask_s = mask_s[:len(base)]
             inversed_mask_s = torch.tensor(list(map(lambda x: not x, mask_s))).to(device=self.config.device)
             if masked_cond is not None:
                 masked_cond = masked_cond * inversed_mask_s.reshape(-1,1,1,1)
