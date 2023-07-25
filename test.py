@@ -20,7 +20,7 @@ import copy
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_02.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_04.yaml')
 
 args = parser.parse_args()
 
@@ -43,9 +43,13 @@ _, test_dataset = get_dataset(config)
 test_dataloader = DataLoader(test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4, drop_last=True, collate_fn=my_collate)
 if 0.0<config.model.prob_mask_s<1.0:
     seg_train_dataset, seg_test_dataset = get_dataset(config, segmentation=True)
-    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=4)
+    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=100)
+    def seg_test_collate(batch):
+        origin_batch = torch.stack([data[0] for data in batch]).repeat_interleave(config.eval.preds_per_test, dim=0)
+        ann_batch = torch.stack([data[1] for data in batch]).repeat_interleave(config.eval.preds_per_test, dim=0)
+        return origin_batch, ann_batch
     seg_test_dataloader = DataLoader(seg_test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4,
-                                     drop_last=True, collate_fn=my_collate)
+                                     drop_last=True, collate_fn=seg_test_collate)
 
 
 # function set
@@ -96,18 +100,17 @@ result_base = {"mse": [],
 #}
 ###############################################################
 result = {task: copy.deepcopy(result_base) for task in tags}
-#step = 0
+step = 0
 for test_batch in tqdm(test_dataloader):
-    #if step==3:
+    #if step==1:
     #    break
     #else:
     #    step+=1
     with torch.no_grad():        
         test_batch = data_transform(config, test_batch)
-        
         target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
         target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])    # (B, F*C, H, W)
-        
+            
         for task in tags:
             if task == "generation":
                 prob_mask_p = 1.0
@@ -130,7 +133,7 @@ for test_batch in tqdm(test_dataloader):
                 prob_mask_f = 1.0
                 prob_mask_s = 0.0
             
-            masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s)
+            masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
             
             # concat conditions (masked_past_frames + masked_future_frames)
             if masked_conds[0] is not None:
@@ -157,11 +160,12 @@ for test_batch in tqdm(test_dataloader):
                     masked_conds_test = masked_conds[2][0]
                     
                 # change input frames for segmentation
-                for i in range(len(target)):
-                    if masks[2][i]==True:
-                        # replace input frames to 'segmentation' from 'frame_generation'
-                        target[i] = masked_conds[2][1][i].reshape(config.data.num_frames, -1, target[i].shape[-2], target[i].shape[-1])   # seg_annotaion
-                    
+                if masks[2] is not None:
+                    for index in range(len(target)):
+                        if masks[2][index]==True:
+                            # replace input frames to 'segmentation' from 'frame_generation'
+                            target[index] = masked_conds[2][1][index].reshape(-1, target[index].shape[-2], target[index].shape[-1])   # seg_annotaion
+            
             init_batch = funcs.get_init_sample(model, target.shape)
             # Get predicted x_0
             pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
@@ -278,7 +282,7 @@ with torch.no_grad():
             prob_mask_f = 1.0
             prob_mask_s = 0.0
         
-        masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s)
+        masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
         
         # concat conditions (masked_past_frames + masked_future_frames)
         if masked_conds[0] is not None:
@@ -305,18 +309,22 @@ with torch.no_grad():
                 masked_conds_test = masked_conds[2][0]
                 
             # change input frames for segmentation
-            for i in range(len(target)):
-                if masks[2][i]==True:
-                    # replace input frames to 'segmentation' from 'frame_generation'
-                    target[i] = masked_conds[2][1][i].reshape(config.data.num_frames, -1, target[i].shape[-2], target[i].shape[-1])   # seg_annotaion
+            if masks[2] is not None:
+                for index in range(len(target)):
+                    if masks[2][index]==True:
+                        # replace input frames to 'segmentation' from 'frame_generation'
+                        target[index] = masked_conds[2][1][index].reshape(-1, target[index].shape[-2], target[index].shape[-1])   # seg_annotaion
                 
         init_batch = funcs.get_init_sample(model, target.shape)
         # Get predicted x_0
         pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
         pred = inverse_data_transform(config, pred[-1]).cpu()
         
-        # Calculate accuracy with target, pred
+        # 
         target = inverse_data_transform(config, target).cpu()
+        #import matplotlib.pyplot as plt
+        #plt.imshow(target[0].reshape(-1,3,target.shape[-2], target.shape[-1])[0].permute(1,2,0).to('cpu'))
+        #plt.show()
         conds_for_plot = []
         for i, d in enumerate(masked_conds):
             if i==2:

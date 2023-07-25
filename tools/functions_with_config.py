@@ -185,7 +185,6 @@ class FuncsWithConfig:
              
             # prepare the original data
             #start = time.time()
-            # TODO improve davis dataset __get__ to be more quickly ########################
             try:
                 seg_origin, seg_ann = next(self.seg_train_iter) if mode=='train' else next(self.seg_test_iter)
             except StopIteration:
@@ -201,6 +200,13 @@ class FuncsWithConfig:
             seg_origin = seg_origin.reshape(len(seg_origin), -1, seg_origin.shape[-2], seg_origin.shape[-1]).to(self.config.device)
             seg_ann = seg_ann.reshape(len(seg_ann), -1, seg_ann.shape[-2], seg_ann.shape[-1]).to(self.config.device)
             
+            # drop_out
+            base = masked_cond if masked_cond is not None else masked_future
+            if len(base)<len(seg_origin):
+                seg_origin = seg_origin[:len(base)]
+                seg_ann = seg_ann[:len(base)]  
+            
+
             if 0.0<=prob_mask_s<1.0:
                 mask_s = torch.rand(seg_origin.shape[0], device=seg_origin.device) > prob_mask_s
                 if prob_mask_s==0.0:
@@ -219,15 +225,9 @@ class FuncsWithConfig:
             # NOT use segmentation
             mask_s, masked_seg, seg_ann = None, None, None
         #print("masking s-frame: {} [s]".format(time.time()-start_seg))   
-            
+        
         # When 'segmentation', 'frame generation task' is deactivate
         if mask_s is not None:
-            base = masked_cond if masked_cond is not None else masked_future
-            if len(base)<len(masked_seg):
-                # drop_out
-                masked_seg = masked_seg[:len(base)]
-                seg_ann = seg_ann[:len(base)]
-                mask_s = mask_s[:len(base)]
             inversed_mask_s = torch.tensor(list(map(lambda x: not x, mask_s))).to(device=self.config.device)
             if masked_cond is not None:
                 masked_cond = masked_cond * inversed_mask_s.reshape(-1,1,1,1)
@@ -396,6 +396,7 @@ class FuncsWithConfig:
                 
     def get_accuracy(self, pred_batch, target_batch, conds, model_lpips=None, i3d=None, calc_fvd=True, only_embedding=True):
         """ calculate MSE, SSIM, LPIPS, FVD of SingleBatch.
+            This function returns dictionary, has metric name as key, and accuracy list as value.
             Please conduct 'inverse_data_transform(batch)' before pass them to this function. 
 
         Args:
@@ -608,7 +609,7 @@ class FuncsWithConfig:
                                 [*gif_frames_pred, *gif_frames_futr], duration=1000 * 1/4, loop=0)
         elif task_name=='segmentation':
             imageio.mimwrite(os.path.join(video_folder, f"[{config_filename}]_videos_seg.gif"),
-                                [*gif_frames_seg], duration=1000 * 1/4, loop=0)
+                                gif_frames_seg, duration=1000 * 1/4, loop=0)
             
         del gif_frames_cond, gif_frames_pred, gif_frames_futr, gif_frames_seg
         

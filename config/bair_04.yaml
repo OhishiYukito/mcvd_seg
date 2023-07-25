@@ -43,8 +43,8 @@ train:
   batch_size: 100
   L1: False
   logging: True
-  validation: False
-  log_interval: 10
+  validation: True
+  log_interval: 1000
 
 eval:
   preds_per_test: 10
