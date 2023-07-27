@@ -183,7 +183,7 @@ class UNet(nn.Module):
         self.config = config
         self.n_channels = n_channels = config.data.channels
         self.ch = ch = config.model.ngf
-        self.mode = mode = getattr(config, 'mode', 'deep')
+        self.mode = mode = getattr(config.model, 'depth', 'deep')
         assert mode in ['deep', 'deeper', 'deepest']
         self.dropout = nn.Dropout2d(p=getattr(config.model, 'dropout', 0.0))
         self.time_conditional = time_conditional = getattr(config.model, 'time_conditional', False)
