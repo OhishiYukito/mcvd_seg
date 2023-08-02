@@ -1,6 +1,4 @@
 
-mode=       # the depth of layer (number of ResnetBlock) ['deep, 'deeper', 'deepest'] 
-
 device      # wheter to use GPU ['cuda', 'cpu']
 
 data

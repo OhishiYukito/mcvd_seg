@@ -22,7 +22,8 @@ import numpy as np
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_01_deeper.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_01_deeper_debug.yaml')
+parser.add_argument('--add_epoch', help="number of additional epochs", default=5)
 
 args = parser.parse_args()
 
@@ -58,9 +59,6 @@ if 0.0<config.model.prob_mask_s<1.0:
     seg_test_dataloader = DataLoader(seg_test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4,
                                      drop_last=True, collate_fn=seg_test_collate)
 
-# make the model
-model = UNet_DDPM(config)#.to(config.device)
-model.train()
 
 # function set
 funcs = FuncsWithConfig(config)
@@ -70,9 +68,13 @@ if 0.0<config.model.prob_mask_s<1.0:
     funcs.seg_train_iter = iter(seg_train_dataloader)
     funcs.seg_test_iter = iter(seg_test_dataloader)
 
-# set the optimizer
-optimizer = get_optimizer(config, model.parameters())
-L1 = getattr(config.train, 'L1', False)
+# load the model
+tags = funcs.get_tags()
+folder_path = os.path.join('results', config.data.dataset.upper(), args.config_path.replace(".yaml", ""))
+ckpt_path = os.path.join(folder_path, '-'.join(tags)+'.pt') 
+states = torch.load(ckpt_path)  # [model_params, optimizer_params, epoch, step]
+print(f"--------- load {ckpt_path} ---------------")
+model = UNet_DDPM(config)
 
 # Parallelisation
 if config.device=="cuda":
@@ -86,6 +88,13 @@ if config.device=="cuda":
 else:
     device = torch.device("cpu")
 
+model.load_state_dict(states[0])
+model.train()
+
+# set the optimizer
+optimizer = get_optimizer(config, model.parameters())
+optimizer.load_state_dict(states[1])
+L1 = getattr(config.train, 'L1', False)
 
 #logging_config = {}
 tags = funcs.get_tags()
@@ -98,9 +107,9 @@ if not __debug__:
         name=args.config_path,
         tags=tags,
     )
-step = 0
-for epoch in range(config.train.num_epochs):
-    print(f"----------------- ↓ epoch {epoch}/{config.train.num_epochs} ---------------------")
+step = states[3]
+for epoch in range(states[2]+1, states[2]+1+args.add_epoch):
+    print(f"----------------- ↓ epoch {epoch}/{config.train.num_epochs+args.add_epoch} ---------------------")
     #if epoch==1:
     #    break
     for i, batch in enumerate(tqdm(train_dataloader)):
@@ -173,9 +182,9 @@ for epoch in range(config.train.num_epochs):
         loss = pow_((z - predict).reshape(len(x), -1)).sum(dim=-1)
         loss = loss.mean(dim=0) 
         
-        if epoch>10 and loss > 10000:
-            print("loss over 10,000 at {} steps in epoch {}!!".format(i, epoch))
         loss.backward()
+        if loss > 10000:
+            print("loss over 10,000 at {} steps !!".format(i))
         optimizer.step()
         #print("get loss ~ backward: {} [s]".format(time.time()-start))
 

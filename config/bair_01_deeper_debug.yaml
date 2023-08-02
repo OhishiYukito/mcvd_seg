@@ -1,6 +1,4 @@
 
-mode: deep
-
 device: cuda
 
 data:
