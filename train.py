@@ -120,6 +120,7 @@ for epoch in range(config.train.num_epochs):
         #start = time.time()
         masked_conds, masks = funcs.get_masked_conds(conds)      # in:(batch_size, num_frames, C, H ,W) => out:(batch_size, num_frames*C, H, W)
         #print("get_masked_conds(): {} [s]".format(time.time()-start))
+        del conds
 
         # concat conditions (masked_past_frames + masked_future_frames + masked_seg_frames)
         if masked_conds[0] is not None:
@@ -151,6 +152,7 @@ for epoch in range(config.train.num_epochs):
                     if masks[2][index]==True:
                         # replace input frames to 'segmentation' from 'frame_generation'
                         x[index] = masked_conds[2][1][index].reshape(config.data.num_frames, -1, x[index].shape[-2], x[index].shape[-1])   # seg_annotaion
+        del masks
         
         # sampling t, z, and make noisy frames    
         #start = time.time()
@@ -161,7 +163,7 @@ for epoch in range(config.train.num_epochs):
         #start = time.time()
         predict = model(x_t, t, masked_conds_train)
         #print("predict: {} [s]".format(time.time()-start))
-
+        del t, x_t
         # Loss
         #start = time.time()
         if L1:
@@ -172,6 +174,7 @@ for epoch in range(config.train.num_epochs):
                 return 1 / 2. * x.square()
         loss = pow_((z - predict).reshape(len(x), -1)).sum(dim=-1)
         loss = loss.mean(dim=0) 
+        del x, z, predict
         
         loss.backward()
         optimizer.step()
@@ -194,11 +197,7 @@ for epoch in range(config.train.num_epochs):
                     target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])    # (B, F*C, H, W)
                     
                     # interpolation
-                    prob_mask_p = 0.0
-                    prob_mask_f = 0.0
-                    prob_mask_s = 1.0
-
-                    masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
+                    masked_conds, _ = funcs.get_masked_conds(conds_test, prob_mask_p=0.0, prob_mask_f=0.0, prob_mask_s=1.0, mode='test')
                     
                     # concat conditions (masked_past_frames + masked_future_frames)
                     if masked_conds[0] is not None:
@@ -244,7 +243,8 @@ for epoch in range(config.train.num_epochs):
                     conds_test = [inverse_data_transform(config, d) if d is not None else None for d in conds_test]
                     accuracies = funcs.get_accuracy(pred, target, conds_test, 
                                                     calc_fvd=False, only_embedding=False)
-
+                    del init_batch, pred, target, conds_test,
+                    
                     calc_result = {}
                     def get_avg_std_from_best_score_list(best_score_list):
                         avg, std = best_score_list.mean().item(), best_score_list.std().item()
