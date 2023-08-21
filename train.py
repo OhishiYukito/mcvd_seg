@@ -18,7 +18,7 @@ import os
 #import datetime
 import time
 import numpy as np
-
+import gc
 
 # get args
 parser = argparse.ArgumentParser()
@@ -175,7 +175,8 @@ for epoch in range(config.train.num_epochs):
         loss = pow_((z - predict).reshape(len(x), -1)).sum(dim=-1)
         loss = loss.mean(dim=0) 
         del x, z, predict
-        
+        gc.collect()
+
         if epoch>10 and loss > 10000:
             print("loss over 10,000 at {} steps in epoch {}!!".format(i, epoch))
         loss.backward()

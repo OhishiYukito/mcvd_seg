@@ -3,6 +3,7 @@ device: cuda
 
 data:
   dataset: bair64
+  seg_dataset: davis
   channels: 3
   logit_transform: False
   uniform_dequantization: False
@@ -25,7 +26,7 @@ model:
   sigma_end: 0.0001
   prob_mask_p: 0.0
   prob_mask_f: 0.0
-  prob_mask_s: 1.0
+  prob_mask_s: 0.5
 
 optim:
   optimizer: Adam
