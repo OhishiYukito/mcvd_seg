@@ -1,0 +1,14 @@
+---interpolation---
+psnr:	{'avg': 18.349, 'std': 1.98}
+mse:	{'avg': 0.016, 'std': 0.007}
+ssim:	{'avg': 0.866, 'std': 0.064}
+lpips:	{'avg': -0.003, 'std': 0.001}
+fvd_traj:	{'avg': 123.718, 'std': 3.72}
+fvd:	{'avg': 108.12}
+---segmentation---
+psnr:	{'avg': 9.521, 'std': 1.644}
+mse:	{'avg': 0.12, 'std': 0.046}
+ssim:	{'avg': 0.036, 'std': 0.037}
+lpips:	{'avg': -0.03, 'std': 0.01}
+fvd_traj:	{'avg': 500.164, 'std': 5.879}
+fvd:	{'avg': 481.751}

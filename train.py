@@ -19,10 +19,11 @@ import os
 import time
 import numpy as np
 import gc
+import sys
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_01_deeper.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_04_deeper_9_9_7.yaml')
 
 args = parser.parse_args()
 
@@ -99,6 +100,7 @@ if not __debug__:
         tags=tags,
     )
 step = 0
+high_loss = False
 for epoch in range(config.train.num_epochs):
     print(f"----------------- ↓ epoch {epoch}/{config.train.num_epochs} ---------------------")
     #if epoch==1:
@@ -120,7 +122,7 @@ for epoch in range(config.train.num_epochs):
         #start = time.time()
         masked_conds, masks = funcs.get_masked_conds(conds)      # in:(batch_size, num_frames, C, H ,W) => out:(batch_size, num_frames*C, H, W)
         #print("get_masked_conds(): {} [s]".format(time.time()-start))
-        del conds
+        del conds, batch
 
         # concat conditions (masked_past_frames + masked_future_frames + masked_seg_frames)
         if masked_conds[0] is not None:
@@ -152,7 +154,7 @@ for epoch in range(config.train.num_epochs):
                     if masks[2][index]==True:
                         # replace input frames to 'segmentation' from 'frame_generation'
                         x[index] = masked_conds[2][1][index].reshape(config.data.num_frames, -1, x[index].shape[-2], x[index].shape[-1])   # seg_annotaion
-        del masks
+        del masks, masked_conds
         
         # sampling t, z, and make noisy frames    
         #start = time.time()
@@ -177,8 +179,10 @@ for epoch in range(config.train.num_epochs):
         del x, z, predict
         gc.collect()
 
-        if epoch>10 and loss > 10000:
+        if epoch>10 and loss > 10000 and high_loss==False:
             print("loss over 10,000 at {} steps in epoch {}!!".format(i, epoch))
+            high_loss = (i, epoch)
+            #sys.exit()
         loss.backward()
         optimizer.step()
         #print("get loss ~ backward: {} [s]".format(time.time()-start))
@@ -301,4 +305,7 @@ for epoch in range(config.train.num_epochs):
                 torch.save(states, ckpt_path)
         
         #print("one train_step: {} [s]".format(time.time()-start_loop))
+
+if high_loss != False:
+    print("loss over 10,000 at {} steps in epoch {}!!".format(high_loss[0], high_loss[1]))
 print("finish train.py!")
