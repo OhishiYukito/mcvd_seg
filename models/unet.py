@@ -349,6 +349,7 @@ class UNet_DDPM(nn.Module):
         elif self.schedule == 'cosine':
             self.register_buffer('alphas', get_sigmas(config))  # large to small, doesn't match paper, match code instead
             self.register_buffer('alphas_prev', torch.cat([self.alphas[1:], torch.tensor([1.0]).to(self.alphas)]))
+            #self.register_buffer('betas', (1 - self.alphas/self.alphas_prev).clip(0, 0.999))    # replace '_' from 'clip_(0, 0.999)'
             self.register_buffer('betas', (1 - self.alphas/self.alphas_prev).clip_(0, 0.999))
         self.gamma = getattr(config.model, 'gamma', False)
         if self.gamma:

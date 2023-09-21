@@ -23,7 +23,7 @@ import sys
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_04_deeper_9_9_7.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='kth64_04_deeper_9_9_7.yaml')
 
 args = parser.parse_args()
 
@@ -185,6 +185,9 @@ for epoch in range(config.train.num_epochs):
             #sys.exit()
         loss.backward()
         optimizer.step()
+        ## TODO #################################################
+        # if loss skyrockets, check the optimizer's parameters to confirm whether hyperparameters are correct or not.
+        #########################################################
         #print("get loss ~ backward: {} [s]".format(time.time()-start))
 
         # Log

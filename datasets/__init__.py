@@ -5,11 +5,12 @@ from datasets.cityscapes import CityscapesDataset
 from datasets.kth64 import KTHDataset
 from datasets.stochastic_moving_mnist import StochasticMovingMNIST
 from datasets.davis import DavisHDF5Dataset
+from datasets.ucf101 import UCF101Dataset
 
 import os
 import torch
 
-DATASETS = ['BAIR64', 'KTH64', "STOCHASTICMOVINGMNIST"]
+DATASETS = ['BAIR64', 'KTH64', 'STOCHASTICMOVINGMNIST', 'UCF101']
 
 def get_dataset(config, segmentation=False, data_path=None):
     
@@ -25,10 +26,11 @@ def get_dataset(config, segmentation=False, data_path=None):
             else:
                 data_path = 'datasets/DAVIS_h5'
             seq_len = config.data.num_frames
+            grayscale = (config.data.channels==1)
             train_dataset = DavisHDF5Dataset(data_path=os.path.join(data_path, 'train'), batch_size=config.train.batch_size, frames_per_sample=seq_len, image_size=getattr(config.data, 'size', 64),
-                                            random_time=True, random_horizontal_flip=True)
+                                            random_time=True, random_horizontal_flip=getattr(config.data, 'random_flip', True), grayscale=grayscale)
             test_dataset = DavisHDF5Dataset(data_path=os.path.join(data_path, 'test'),  batch_size=config.train.batch_size, frames_per_sample=seq_len, image_size=getattr(config.data, 'size', 64),
-                                            random_time=True, random_horizontal_flip=False)
+                                            random_time=True, random_horizontal_flip=False, grayscale=grayscale)
     
     else:
         if config.data.dataset.upper() == "BAIR64":
@@ -47,9 +49,9 @@ def get_dataset(config, segmentation=False, data_path=None):
                 data_path = 'datasets/KTH64_h5'
             frames_per_sample = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
             train_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample, train=True,
-                                    random_time=True, random_horizontal_flip=False)
+                                    random_time=True, random_horizontal_flip=getattr(config.data, 'random_flip', True), with_target=False)
             test_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample, train=False,
-                                    random_time=True, random_horizontal_flip=False, total_videos=256)
+                                    random_time=True, random_horizontal_flip=False, with_target=False, total_videos=256)
             
         
         elif config.data.dataset.upper() == "STOCHASTICMOVINGMNIST":
@@ -61,7 +63,19 @@ def get_dataset(config, segmentation=False, data_path=None):
                                                 with_target=False)
             test_dataset = StochasticMovingMNIST(data_path, train=False, seq_len=seq_len, num_digits=getattr(config.data, "num_digits", 2),
                                                 #step_length=config.data.step_length, 
-                                                with_target=False, total_videos=256)        
+                                                with_target=False, total_videos=256)
+        
+
+        elif config.data.dataset.upper() == "UCF101":
+            # UCF101_h5 (data_path)
+            # |-- shard_0001.hdf5
+            if data_path is None:
+                data_path = 'datasets/UCF101_h5'
+            frames_per_sample = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
+            train_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample, image_size=getattr(config.data, 'image_size', 64), train=True, random_time=True,
+                                    random_horizontal_flip=getattr(config.data, 'random_flip', True), with_target=False)
+            test_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample, image_size=getattr(config.data, 'image_size', 64), train=False, random_time=True,
+                                        random_horizontal_flip=False, total_videos=256, with_target=False)
     
     return train_dataset, test_dataset
 

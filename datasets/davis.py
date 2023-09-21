@@ -26,7 +26,7 @@ class DavisHDF5Maker(HDF5Maker):
             
 class DavisHDF5Dataset(Dataset):
     
-    def __init__(self, data_path, batch_size, frames_per_sample=5, image_size=64, random_time=True, random_horizontal_flip=True, color_jitter=0,
+    def __init__(self, data_path, batch_size, frames_per_sample=5, image_size=64, random_time=True, random_horizontal_flip=True, grayscale=False, color_jitter=0,
                  total_videos=-1):
 
         self.data_path = data_path
@@ -35,8 +35,10 @@ class DavisHDF5Dataset(Dataset):
         self.image_size = image_size
         self.random_time = random_time
         self.random_horizontal_flip = random_horizontal_flip
+        self.grayscale = grayscale
         self.color_jitter = color_jitter
         self.total_videos = total_videos            # If we wish to restrict total number of videos (e.g. for val)
+
             
         self.jitter = transforms.ColorJitter(hue=color_jitter)
 
@@ -77,6 +79,12 @@ class DavisHDF5Dataset(Dataset):
                 # random flip
                 arr = transforms.RandomHorizontalFlip(flip_p)(img)
                 arr_ann = transforms.RandomHorizontalFlip(flip_p)(img_ann)
+
+                # grayscale (to set 'channels = 1')
+                if self.grayscale:
+                    arr = transforms.Grayscale(num_output_channels=1)(img)
+                    arr_ann = transforms.Grayscale(num_output_channels=1)(img_ann)
+
                 prefinals.append(arr)
                 prefinals_ann.append(arr_ann)
                 
