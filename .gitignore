@@ -13,3 +13,4 @@ models/weights/v0.1/alex.pth
 __pycache__/
 *.py[cod]
 *$py.class
+datasets/UCF101_h5/shard_0001.hdf5

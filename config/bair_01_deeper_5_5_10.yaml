@@ -2,16 +2,15 @@
 device: cuda
 
 data:
-  dataset: ucf101
-  seg_dataset: davis
+  dataset: bair64
   channels: 3
   logit_transform: False
   uniform_dequantization: False
   gaussian_dequantization: False
   rescaled: True
-  num_frames: 7
-  num_frames_cond: 1
-  num_frames_future: 1
+  num_frames: 10
+  num_frames_cond: 5
+  num_frames_future: 5
 
 model:
   depth: deeper
@@ -26,7 +25,7 @@ model:
   sigma_end: 0.0001
   prob_mask_p: 0.0
   prob_mask_f: 0.0
-  prob_mask_s: 0.5
+  prob_mask_s: 1.0
 
 optim:
   optimizer: Adam
@@ -34,7 +33,7 @@ optim:
   weight_decay: 0.000
   beta1: 0.9
   amsgrad: True
-  eps: 0.01
+  eps: 0.00000001
 
 
 train:
