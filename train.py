@@ -23,7 +23,7 @@ import sys
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='kth64_04_deeper_9_9_7.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='kth64_01_deeper_5_5_10.yaml')
 
 args = parser.parse_args()
 
