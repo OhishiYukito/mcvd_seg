@@ -9,6 +9,7 @@ from datasets.ucf101 import UCF101Dataset
 
 import os
 import torch
+import cv2
 
 DATASETS = ['BAIR64', 'KTH64', 'STOCHASTICMOVINGMNIST', 'UCF101']
 
@@ -56,7 +57,7 @@ def get_dataset(config, segmentation=False, data_path=None):
         
         elif config.data.dataset.upper() == "STOCHASTICMOVINGMNIST":
             if data_path is None:
-                data_path = 'datasets/MNIST'
+                data_path = 'datasets'  # if set 'datasets/MNIST', data will be downloaded like 'datasets/MNIST/MNIST/raw/...' 
             seq_len = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
             train_dataset = StochasticMovingMNIST(data_path, train=True, seq_len=seq_len, num_digits=getattr(config.data, "num_digits", 2),
                                                 #step_length=config.data.step_length, 
@@ -102,6 +103,10 @@ def data_transform(config, X):
         X = 2 * X - 1.
     elif config.data.logit_transform:
         X = logit_transform(X)
+
+    # grayscale_tensor -> rgb_tenor
+    if config.data.channels != X.shape[2]:
+        X = X.repeat(1,1,3,1,1)
 
     if hasattr(config, 'image_mean'):
         return X - config.image_mean.to(X.device)[None, ...]

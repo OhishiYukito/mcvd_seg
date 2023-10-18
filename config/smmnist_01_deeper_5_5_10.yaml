@@ -2,7 +2,7 @@
 device: cuda
 
 data:
-  dataset: kth64
+  dataset: STOCHASTICMOVINGMNIST
   channels: 3
   logit_transform: False
   uniform_dequantization: False
