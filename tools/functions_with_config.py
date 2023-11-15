@@ -3,6 +3,7 @@
 import imageio
 from tqdm import tqdm
 import os
+import sys
 import torch
 from torch.distributions.gamma import Gamma
 import torch.nn.functional as F
@@ -24,6 +25,14 @@ class FuncsWithConfig:
         # to separate frames into input and condition frames
         self.num_cond = config.data.num_frames_cond
         self.num_pred = config.data.num_frames
+        self.num_pred_total = getattr(config.data, 'num_frames_total', self.num_pred)
+        # check num_pred=num_pred_total in 'interpolation'
+        if config.model.prob_mask_p<1 and config.model.prob_mask_f<1:
+            if self.num_pred != self.num_pred_total:
+                # interpolationでは再帰的な出力はできないので、
+                # interpolationを含む学習を行う場合、
+                # 「1度の出力枚数=トータルの出力枚数」にする必要がある
+                sys.exit('if conduct interpolation, you must set \'num_frames_total=num_frames\'')
         self.num_future = config.data.num_frames_future
         assert self.num_cond>=0, f"num_frames_cond is {self.num_cond}! Set to [num_frames_cond >= 0] !"
         assert self.num_pred>=0, f"num_frames is {self.num_pred}! Set to [num_frames >= 0] !"
@@ -44,11 +53,12 @@ class FuncsWithConfig:
         self.config = config
         
     
-    def separate_frames(self, batch):
+    def separate_frames(self, batch, mode='train'):
         """separate frames into input and condition frames
 
         Args:
             batch (): [batch_size, num_total_frames, channel, size, size]
+            mode : if 'test', separate frames into (num_frames_total,  num_frames_cond+num_frames_future)
             
         return:
             x:  input frames ([batch_size, num_frames, channel, size, size])
@@ -57,13 +67,16 @@ class FuncsWithConfig:
         """
         cond_p = batch[:, :self.num_cond] if self.num_cond>0 else None
             
-        x = batch[:, self.num_cond:self.num_cond+self.num_pred]
+        if mode=='train':
+            target = batch[:, self.num_cond:self.num_cond+self.num_pred] 
+        elif mode=='test':
+            target = batch[:, self.num_cond:self.num_cond+self.num_pred_total]
         
         cond_f = batch[:, self.num_cond+self.num_pred:] if self.num_future>0 else None
             
         conds = [cond_p, cond_f]
         
-        return x, conds
+        return target, conds
         
         
     # predict the noise from input
@@ -513,7 +526,7 @@ class FuncsWithConfig:
         """save frames as gif and png
 
         Args:
-            conds (list): condition frames [past, future]   (B, F*C, H, W)
+            conds (list): condition frames [past, future, seg]   (B, F*C, H, W)
             current_frames (list): [target, predicted]      (B, F*C, H, W)
             video_folder (str): path to save gif
             task_name (str): be used as a part of filename

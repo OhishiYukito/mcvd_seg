@@ -20,7 +20,7 @@ import copy
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_04.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_fpgs_deeper_1_0_5.yaml')
 
 args = parser.parse_args()
 
@@ -41,9 +41,9 @@ def my_collate(batch):
 # https://github.com/voletiv/mcvd-pytorch/blob/master/runners/ncsn_runner.py#L254
 _, test_dataset = get_dataset(config)
 test_dataloader = DataLoader(test_dataset, batch_size=getattr(config.train, 'batch_size', 64)//config.eval.preds_per_test, shuffle=True, num_workers=4, drop_last=True, collate_fn=my_collate)
-if 0.0<config.model.prob_mask_s<1.0:
+if 0.0<=config.model.prob_mask_s<1.0:
     seg_train_dataset, seg_test_dataset = get_dataset(config, segmentation=True)
-    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=100)
+    seg_train_dataloader = DataLoader(seg_train_dataset, batch_size=getattr(config.train, 'batch_size', 64), shuffle=True, num_workers=100, drop_last=True)
     def seg_test_collate(batch):
         origin_batch = torch.stack([data[0] for data in batch]).repeat_interleave(config.eval.preds_per_test, dim=0)
         ann_batch = torch.stack([data[1] for data in batch]).repeat_interleave(config.eval.preds_per_test, dim=0)
@@ -54,7 +54,7 @@ if 0.0<config.model.prob_mask_s<1.0:
 
 # function set
 funcs = FuncsWithConfig(config)
-if 0.0<config.model.prob_mask_s<1.0:
+if 0.0<=config.model.prob_mask_s<1.0:
     funcs.seg_train_dataloader = seg_train_dataloader
     funcs.seg_test_dataloader = seg_test_dataloader
     funcs.seg_train_iter = iter(seg_train_dataloader)
@@ -102,16 +102,16 @@ result_base = {"mse": [],
 result = {task: copy.deepcopy(result_base) for task in tags}
 step = 0
 for test_batch in tqdm(test_dataloader):
-    #if step==1:
-    #    break
-    #else:
-    #    step+=1
     with torch.no_grad():        
         test_batch = data_transform(config, test_batch)
-        target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
-        target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])    # (B, F*C, H, W)
-            
+        # if step==1:
+        #     break
+        # else:
+        #     step+=1
         for task in tags:
+            target_total, conds_test_first = funcs.separate_frames(test_batch.to(device), mode='test')       # (B, F, C, H, W)
+            target_total = target_total.reshape(target_total.shape[0], -1, target_total.shape[-2], target_total.shape[-1])    # (B, F*C, H, W)
+            
             if task == "generation":
                 prob_mask_p = 1.0
                 prob_mask_f = 1.0
@@ -133,52 +133,77 @@ for test_batch in tqdm(test_dataloader):
                 prob_mask_f = 1.0
                 prob_mask_s = 0.0
             
-            masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
-            
-            # concat conditions (masked_past_frames + masked_future_frames)
-            if masked_conds[0] is not None:
-                if masked_conds[1] is not None:
-                    # condition = cond_frames + future_frames
-                    masked_conds_test = torch.cat(masked_conds[:2], dim=1)
+            num_pred_on_step = config.data.num_frames
+            channels = config.data.channels
+            prev_pred = None
+            all_pred = None
+            # recursive to get (num_frames_total) frames.
+            for num_step in range(config.data.num_frames_total//num_pred_on_step):
+                target = target_total[:, channels*(num_step*num_pred_on_step) : channels*((num_step+1)*num_pred_on_step)]   # (B, C*F_on_step, H, W)
+                if prev_pred is None:
+                    conds_test = conds_test_first
                 else:
-                    # condition = cond_frames
-                    masked_conds_test = masked_conds[0]
-            else:
-                if masked_conds[1] is not None:
-                    # condition = future_frames
-                    masked_conds_test = masked_conds[1]
+                    # next line is executed only when future frames are not used.
+                    # so we can set 'conds_test = [cond_past, None(=cond_future)]'
+                    conds_test = [torch.cat((conds_test[0], prev_pred), dim=1)[:, -channels*config.data.num_frames_cond:], None]
+                masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
+                
+                # concat conditions (masked_past_frames + masked_future_frames)
+                if masked_conds[0] is not None:
+                    if masked_conds[1] is not None:
+                        # condition = cond_frames + future_frames
+                        masked_conds_test = torch.cat(masked_conds[:2], dim=1)
+                    else:
+                        # condition = cond_frames
+                        masked_conds_test = masked_conds[0]
                 else:
-                    # condition = None
-                    masked_conds_test = None
-            
-            if masked_conds[2][0] is not None:
-                if masked_conds_test is not None:
-                    # condition += seg_frames
-                    masked_conds_test = torch.cat([masked_conds_test, masked_conds[2][0]], dim=1)
+                    if masked_conds[1] is not None:
+                        # condition = future_frames
+                        masked_conds_test = masked_conds[1]
+                    else:
+                        # condition = None
+                        masked_conds_test = None
+                
+                if masked_conds[2][0] is not None:
+                    if masked_conds_test is not None:
+                        # condition += seg_frames
+                        masked_conds_test = torch.cat([masked_conds_test, masked_conds[2][0]], dim=1)
+                    else:
+                        # condition = seg_frames
+                        masked_conds_test = masked_conds[2][0]
+                        
+                    # change input frames for segmentation
+                    if masks[2] is not None:
+                        for index in range(len(target)):
+                            if masks[2][index]==True:
+                                # replace input frames to 'segmentation' from 'frame_generation'
+                                target[index] = masked_conds[2][1][index].reshape(-1, target[index].shape[-2], target[index].shape[-1])   # seg_annotaion
+                                target_total[index, channels*(num_step*num_pred_on_step) : channels*((num_step+1)*num_pred_on_step)] = target[index]
+
+                init_batch = funcs.get_init_sample(model, target.shape)
+                # Get predicted x_0
+                pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
+                #pred = inverse_data_transform(config, pred[-1])
+                pred = pred[-1]
+                #if task == "segmentation":
+                #    # convert to 0 or 1
+                #    pred = pred > 0.5
+                #    pred = pred.to(torch.int32)
+                if all_pred is None:
+                    all_pred = pred     # (B, C*F, H, W)
                 else:
-                    # condition = seg_frames
-                    masked_conds_test = masked_conds[2][0]
-                    
-                # change input frames for segmentation
-                if masks[2] is not None:
-                    for index in range(len(target)):
-                        if masks[2][index]==True:
-                            # replace input frames to 'segmentation' from 'frame_generation'
-                            target[index] = masked_conds[2][1][index].reshape(-1, target[index].shape[-2], target[index].shape[-1])   # seg_annotaion
+                    all_pred = torch.cat((all_pred, pred), dim=1)
+                prev_pred = pred
             
-            init_batch = funcs.get_init_sample(model, target.shape)
-            # Get predicted x_0
-            pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
-            pred = inverse_data_transform(config, pred[-1])
-            #if task == "segmentation":
-            #    # convert to 0 or 1
-            #    pred = pred > 0.5
-            #    pred = pred.to(torch.int32)
             
             # Calculate accuracy with target, pred
-            target = inverse_data_transform(config, target)
-            conds_test = [inverse_data_transform(config, d) if d is not None else None for d in conds_test]
-            accuracies = funcs.get_accuracy(pred, target, conds_test, 
+            target_total = inverse_data_transform(config, target_total)
+            if task=="segmentation":
+                conds_test_first = [None, None]
+            else:
+                conds_test_first = [inverse_data_transform(config, d) if d is not None else None for d in conds_test_first]
+            all_pred = inverse_data_transform(config, all_pred)
+            accuracies = funcs.get_accuracy(all_pred, target_total, conds_test_first, 
                                             model_lpips=model_lpips, i3d=i3d, calc_fvd=False, only_embedding=True)
             
             # append each score
@@ -258,8 +283,8 @@ with torch.no_grad():
     test_batch = test_batch[::config.eval.preds_per_test]   # ignore the repeated ones
     
     for task in tags:
-        target, conds_test = funcs.separate_frames(test_batch.to(device))       # (B, F, C, H, W)
-        target = target.reshape(target.shape[0], -1, target.shape[-2], target.shape[-1])
+        target_total, conds_test_first = funcs.separate_frames(test_batch.to(device), mode='test')       # (B, F, C, H, W)
+        target_total = target_total.reshape(target_total.shape[0], -1, target_total.shape[-2], target_total.shape[-1])    # (B, F*C, H, W)
 
         if task == "generation":
             prob_mask_p = 1.0
@@ -282,51 +307,83 @@ with torch.no_grad():
             prob_mask_f = 1.0
             prob_mask_s = 0.0
         
-        masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
-        
-        # concat conditions (masked_past_frames + masked_future_frames)
-        if masked_conds[0] is not None:
-            if masked_conds[1] is not None:
-                # condition = cond_frames + future_frames
-                masked_conds_test = torch.cat(masked_conds[:2], dim=1)
+        masked_conds_for_plot, _ = funcs.get_masked_conds(conds_test_first, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
+        num_pred_on_step = config.data.num_frames
+        channels = config.data.channels
+        prev_pred = None
+        all_pred = None
+        # recursive to get (num_frames_total) frames.
+        for num_step in range(config.data.num_frames_total//num_pred_on_step):
+            target = target_total[:, channels*(num_step*num_pred_on_step) : channels*((num_step+1)*num_pred_on_step)]   # (B, C*F_on_step, H, W)
+            if prev_pred is None:
+                conds_test = conds_test_first
             else:
-                # condition = cond_frames
-                masked_conds_test = masked_conds[0]
-        else:
-            if masked_conds[1] is not None:
-                # condition = future_frames
-                masked_conds_test = masked_conds[1]
+                # next line is executed only when future frames are not used.
+                # so we can set 'conds_test = [cond_past, None(=cond_future)]'
+                conds_test = [torch.cat((conds_test[0], prev_pred), dim=1)[:, -channels*config.data.num_frames_cond:], None]
+            masked_conds, masks = funcs.get_masked_conds(conds_test, prob_mask_p, prob_mask_f, prob_mask_s, mode='test')
+            
+            # concat conditions (masked_past_frames + masked_future_frames)
+            if masked_conds[0] is not None:
+                if masked_conds[1] is not None:
+                    # condition = cond_frames + future_frames
+                    masked_conds_test = torch.cat(masked_conds[:2], dim=1)
+                else:
+                    # condition = cond_frames
+                    masked_conds_test = masked_conds[0]
             else:
-                # condition = None
-                masked_conds_test = None
-        
-        if masked_conds[2][0] is not None:
-            if masked_conds_test is not None:
-                # condition += seg_frames
-                masked_conds_test = torch.cat([masked_conds_test, masked_conds[2][0]], dim=1)
+                if masked_conds[1] is not None:
+                    # condition = future_frames
+                    masked_conds_test = masked_conds[1]
+                else:
+                    # condition = None
+                    masked_conds_test = None
+            
+            if masked_conds[2][0] is not None:
+                if masked_conds_test is not None:
+                    # condition += seg_frames
+                    masked_conds_test = torch.cat([masked_conds_test, masked_conds[2][0]], dim=1)
+                else:
+                    # condition = seg_frames
+                    masked_conds_test = masked_conds[2][0]
+                    
+                # change input frames for segmentation
+                if masks[2] is not None:
+                    for index in range(len(target)):
+                        if masks[2][index]==True:
+                            # replace input frames to 'segmentation' from 'frame_generation'
+                            target[index] = masked_conds[2][1][index].reshape(-1, target[index].shape[-2], target[index].shape[-1])   # seg_annotaion
+                            target_total[index, channels*(num_step*num_pred_on_step) : channels*((num_step+1)*num_pred_on_step)] = target[index]
+                            masked_conds_for_plot[2] = (masked_conds[2][0], masked_conds_for_plot[2][1])
+
+            init_batch = funcs.get_init_sample(model, target.shape)
+            # Get predicted x_0
+            pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
+    
+            prev_pred = pred[-1]
+            pred = inverse_data_transform(config, pred[-1]).cpu()
+            #if task == "segmentation":
+            #    # convert to 0 or 1
+            #    pred = pred > 0.5
+            #    pred = pred.to(torch.int32)
+            if all_pred is None:
+                all_pred = pred     # (B, C*F, H, W)
             else:
-                # condition = seg_frames
-                masked_conds_test = masked_conds[2][0]
-                
-            # change input frames for segmentation
-            if masks[2] is not None:
-                for index in range(len(target)):
-                    if masks[2][index]==True:
-                        # replace input frames to 'segmentation' from 'frame_generation'
-                        target[index] = masked_conds[2][1][index].reshape(-1, target[index].shape[-2], target[index].shape[-1])   # seg_annotaion
-                
-        init_batch = funcs.get_init_sample(model, target.shape)
-        # Get predicted x_0
-        pred = funcs.reverse_process(model, init_batch, masked_conds_test, subsample_steps=config.eval.subsample_steps, final_only=True)  # pred : ['0' if final_only else 'len(steps)', B, C*F, H, W]
-        pred = inverse_data_transform(config, pred[-1]).cpu()
+                all_pred = torch.cat((all_pred, pred), dim=1)
+
+            # segmentationの場合は再帰させる必要がない
+            if task=="segmentation":
+                target_total = target
+                break
+            
         
         # 
-        target = inverse_data_transform(config, target).cpu()
+        target_total = inverse_data_transform(config, target_total).cpu()
         #import matplotlib.pyplot as plt
         #plt.imshow(target[0].reshape(-1,3,target.shape[-2], target.shape[-1])[0].permute(1,2,0).to('cpu'))
         #plt.show()
         conds_for_plot = []
-        for i, d in enumerate(masked_conds):
+        for i, d in enumerate(masked_conds_for_plot):
             if i==2:
                 if d[0] is not None:
                     conds_for_plot.append(inverse_data_transform(config, d[0]).cpu())
@@ -339,4 +396,4 @@ with torch.no_grad():
                     conds_for_plot.append(None)
         #masked_conds = [inverse_data_transform(config, d).cpu() if d is not None else None for d in masked_conds]
 
-        funcs.plot_frames(conds_for_plot, [target, pred], video_folder=folder_path, task_name=task, config_filename=args.config_path.replace(".yaml", ""))
+        funcs.plot_frames(conds_for_plot, [target_total, all_pred], video_folder=folder_path, task_name=task, config_filename=args.config_path.replace(".yaml", ""))
