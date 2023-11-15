@@ -37,10 +37,11 @@ def get_dataset(config, segmentation=False, data_path=None):
         if config.data.dataset.upper() == "BAIR64":
             if data_path is None:
                 data_path = 'datasets/BAIR_h5'
-            frames_per_sample = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
-            train_dataset = BAIRDataset(os.path.join(data_path, "train"), frames_per_sample=frames_per_sample, random_time=True,
+            frames_per_sample_train = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
+            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames_total
+            train_dataset = BAIRDataset(os.path.join(data_path, "train"), frames_per_sample=frames_per_sample_train, random_time=True,
                                 random_horizontal_flip=getattr(config.data, 'random_flip', True), color_jitter=getattr(config.data, 'color_jitter', 0.0))
-            test_dataset = BAIRDataset(os.path.join(data_path, "test"), frames_per_sample=frames_per_sample, random_time=True,
+            test_dataset = BAIRDataset(os.path.join(data_path, "test"), frames_per_sample=frames_per_sample_test, random_time=True,
                                     random_horizontal_flip=False, color_jitter=0.0)
         
         elif config.data.dataset.upper() == "KTH64":
@@ -48,10 +49,11 @@ def get_dataset(config, segmentation=False, data_path=None):
             # |-- shard_0001.hdf5
             if data_path is None:
                 data_path = 'datasets/KTH64_h5'
-            frames_per_sample = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
-            train_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample, train=True,
+            frames_per_sample_train = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
+            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames_total
+            train_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample_train, train=True,
                                     random_time=True, random_horizontal_flip=getattr(config.data, 'random_flip', True), with_target=False)
-            test_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample, train=False,
+            test_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample_test, train=False,
                                     random_time=True, random_horizontal_flip=False, with_target=False, total_videos=256)
             
         
@@ -72,10 +74,11 @@ def get_dataset(config, segmentation=False, data_path=None):
             # |-- shard_0001.hdf5
             if data_path is None:
                 data_path = 'datasets/UCF101_h5'
-            frames_per_sample = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
-            train_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample, image_size=getattr(config.data, 'image_size', 64), train=True, random_time=True,
+            frames_per_sample_train = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
+            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames_total
+            train_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample_train, image_size=getattr(config.data, 'image_size', 64), train=True, random_time=True,
                                     random_horizontal_flip=getattr(config.data, 'random_flip', True), with_target=False)
-            test_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample, image_size=getattr(config.data, 'image_size', 64), train=False, random_time=True,
+            test_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample_test, image_size=getattr(config.data, 'image_size', 64), train=False, random_time=True,
                                         random_horizontal_flip=False, total_videos=256, with_target=False)
     
     return train_dataset, test_dataset
