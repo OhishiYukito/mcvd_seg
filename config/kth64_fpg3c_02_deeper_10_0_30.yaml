@@ -2,17 +2,17 @@
 device: cuda
 
 data:
-  dataset: STOCHASTICMOVINGMNIST
-  seg_dataset: davis
+  dataset: kth64
   channels: 3
+  ch_noise: 0.01
   logit_transform: False
   uniform_dequantization: False
   gaussian_dequantization: False
   rescaled: True
   num_frames: 10
-  num_frames_total: 10
-  num_frames_cond: 5
-  num_frames_future: 5
+  num_frames_total: 30
+  num_frames_cond: 10
+  num_frames_future: 0
 
 model:
   depth: deeper
@@ -25,22 +25,22 @@ model:
   sigma_dist: cosine
   sigma_begin: 0.02
   sigma_end: 0.0001
-  prob_mask_p: 0.0
-  prob_mask_f: 0.0
-  prob_mask_s: 0.5
+  prob_mask_p: 0.5
+  prob_mask_f: 1.0
+  prob_mask_s: 1.0
 
 optim:
   optimizer: Adam
   lr: 0.0001
   weight_decay: 0.000
   beta1: 0.9
-  amsgrad: True
+  amsgrad: False
   eps: 0.00000001
 
 
 train:
   num_epochs: 100
-  batch_size: 64
+  batch_size: 16
   L1: False
   logging: True
   validation: True

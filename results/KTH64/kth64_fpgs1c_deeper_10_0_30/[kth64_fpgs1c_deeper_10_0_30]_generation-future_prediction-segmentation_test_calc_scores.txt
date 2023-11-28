@@ -1,0 +1,21 @@
+---generation---
+psnr:	{'avg': 18.272, 'std': 2.582}
+mse:	{'avg': 0.017, 'std': 0.009}
+ssim:	{'avg': 0.441, 'std': 0.074}
+lpips:	{'avg': -0.001, 'std': 0.005}
+fvd_traj:	{'avg': 1827.472, 'std': 22.092}
+fvd:	{'avg': 1795.56}
+---future_prediction---
+psnr:	{'avg': 19.871, 'std': 2.761}
+mse:	{'avg': 0.013, 'std': 0.008}
+ssim:	{'avg': 0.633, 'std': 0.094}
+lpips:	{'avg': -0.002, 'std': 0.004}
+fvd_traj:	{'avg': 2453.079, 'std': 46.845}
+fvd:	{'avg': 2407.397}
+---segmentation---
+psnr:	{'avg': 7.041, 'std': 0.562}
+mse:	{'avg': 0.199, 'std': 0.024}
+ssim:	{'avg': 0.028, 'std': 0.031}
+lpips:	{'avg': 0.012, 'std': 0.005}
+fvd_traj:	{'avg': 2674.634, 'std': 39.004}
+fvd:	{'avg': 2654.869}

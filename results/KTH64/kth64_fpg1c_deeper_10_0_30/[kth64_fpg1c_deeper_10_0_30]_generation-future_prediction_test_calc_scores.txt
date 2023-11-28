@@ -1,0 +1,14 @@
+---generation---
+psnr:	{'avg': 18.996, 'std': 2.712}
+mse:	{'avg': 0.015, 'std': 0.008}
+ssim:	{'avg': 0.493, 'std': 0.091}
+lpips:	{'avg': -0.017, 'std': 0.006}
+fvd_traj:	{'avg': 3092.372, 'std': 79.322}
+fvd:	{'avg': 3048.861}
+---future_prediction---
+psnr:	{'avg': 19.03, 'std': 3.549}
+mse:	{'avg': 0.017, 'std': 0.014}
+ssim:	{'avg': 0.641, 'std': 0.099}
+lpips:	{'avg': -0.016, 'std': 0.008}
+fvd_traj:	{'avg': 2694.204, 'std': 32.114}
+fvd:	{'avg': 2649.766}
