@@ -38,7 +38,7 @@ def get_dataset(config, segmentation=False, data_path=None):
             if data_path is None:
                 data_path = 'datasets/BAIR_h5'
             frames_per_sample_train = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
-            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames_total
+            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + ((config.data.num_frames_total+config.data.num_frames-1)//config.data.num_frames)*config.data.num_frames
             train_dataset = BAIRDataset(os.path.join(data_path, "train"), frames_per_sample=frames_per_sample_train, random_time=True,
                                 random_horizontal_flip=getattr(config.data, 'random_flip', True), color_jitter=getattr(config.data, 'color_jitter', 0.0))
             test_dataset = BAIRDataset(os.path.join(data_path, "test"), frames_per_sample=frames_per_sample_test, random_time=True,
@@ -50,7 +50,7 @@ def get_dataset(config, segmentation=False, data_path=None):
             if data_path is None:
                 data_path = 'datasets/KTH64_h5'
             frames_per_sample_train = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
-            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames_total
+            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + ((config.data.num_frames_total+config.data.num_frames-1)//config.data.num_frames)*config.data.num_frames
             train_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample_train, train=True,
                                     random_time=True, random_horizontal_flip=getattr(config.data, 'random_flip', True), with_target=False)
             test_dataset = KTHDataset(data_path, frames_per_sample=frames_per_sample_test, train=False,
@@ -60,11 +60,12 @@ def get_dataset(config, segmentation=False, data_path=None):
         elif config.data.dataset.upper() == "STOCHASTICMOVINGMNIST":
             if data_path is None:
                 data_path = 'datasets'  # if set 'datasets/MNIST', data will be downloaded like 'datasets/MNIST/MNIST/raw/...' 
-            seq_len = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
-            train_dataset = StochasticMovingMNIST(data_path, train=True, seq_len=seq_len, num_digits=getattr(config.data, "num_digits", 2),
+            frames_per_sample_train = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
+            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + ((config.data.num_frames_total+config.data.num_frames-1)//config.data.num_frames)*config.data.num_frames
+            train_dataset = StochasticMovingMNIST(data_path, train=True, seq_len=frames_per_sample_train, num_digits=getattr(config.data, "num_digits", 2),
                                                 #step_length=config.data.step_length, 
                                                 with_target=False)
-            test_dataset = StochasticMovingMNIST(data_path, train=False, seq_len=seq_len, num_digits=getattr(config.data, "num_digits", 2),
+            test_dataset = StochasticMovingMNIST(data_path, train=False, seq_len=frames_per_sample_test, num_digits=getattr(config.data, "num_digits", 2),
                                                 #step_length=config.data.step_length, 
                                                 with_target=False, total_videos=256)
         
@@ -75,7 +76,7 @@ def get_dataset(config, segmentation=False, data_path=None):
             if data_path is None:
                 data_path = 'datasets/UCF101_h5'
             frames_per_sample_train = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames
-            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + config.data.num_frames_total
+            frames_per_sample_test = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + ((config.data.num_frames_total+config.data.num_frames-1)//config.data.num_frames)*config.data.num_frames
             train_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample_train, image_size=getattr(config.data, 'image_size', 64), train=True, random_time=True,
                                     random_horizontal_flip=getattr(config.data, 'random_flip', True), with_target=False)
             test_dataset = UCF101Dataset(data_path, frames_per_sample=frames_per_sample_test, image_size=getattr(config.data, 'image_size', 64), train=False, random_time=True,

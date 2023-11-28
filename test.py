@@ -138,7 +138,7 @@ for test_batch in tqdm(test_dataloader):
             prev_pred = None
             all_pred = None
             # recursive to get (num_frames_total) frames.
-            for num_step in range(config.data.num_frames_total//num_pred_on_step):
+            for num_step in range((config.data.num_frames_total+num_pred_on_step-1)//num_pred_on_step):
                 target = target_total[:, channels*(num_step*num_pred_on_step) : channels*((num_step+1)*num_pred_on_step)]   # (B, C*F_on_step, H, W)
                 if prev_pred is None:
                     conds_test = conds_test_first
@@ -194,7 +194,10 @@ for test_batch in tqdm(test_dataloader):
                 else:
                     all_pred = torch.cat((all_pred, pred), dim=1)
                 prev_pred = pred
-            
+                
+            # cut off num_frames_total frames 
+            all_pred = all_pred[:, :config.data.num_frames_total]
+            target_total = target_total[:, :config.data.num_frames_total]
             
             # Calculate accuracy with target, pred
             target_total = inverse_data_transform(config, target_total)
@@ -313,7 +316,7 @@ with torch.no_grad():
         prev_pred = None
         all_pred = None
         # recursive to get (num_frames_total) frames.
-        for num_step in range(config.data.num_frames_total//num_pred_on_step):
+        for num_step in range((config.data.num_frames_total+num_pred_on_step-1)//num_pred_on_step):
             target = target_total[:, channels*(num_step*num_pred_on_step) : channels*((num_step+1)*num_pred_on_step)]   # (B, C*F_on_step, H, W)
             if prev_pred is None:
                 conds_test = conds_test_first
@@ -377,7 +380,11 @@ with torch.no_grad():
                 break
             
         
-        # 
+        # cut off num_frames_total frames 
+        if task!="segmentation":
+            all_pred = all_pred[:, :config.data.num_frames_total]
+            target_total = target_total[:, :config.data.num_frames_total]
+    
         target_total = inverse_data_transform(config, target_total).cpu()
         #import matplotlib.pyplot as plt
         #plt.imshow(target[0].reshape(-1,3,target.shape[-2], target.shape[-1])[0].permute(1,2,0).to('cpu'))
