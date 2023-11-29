@@ -24,7 +24,7 @@ model:
   sigma_dist: cosine
   sigma_begin: 0.02
   sigma_end: 0.0001
-  prob_mask_p: 0.0
+  prob_mask_p: 0.5
   prob_mask_f: 1.0
   prob_mask_s: 1.0
 

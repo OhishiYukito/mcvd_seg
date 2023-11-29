@@ -97,6 +97,11 @@ def data_transform(config, X):
     data.rescaled: [0,1] -> [-1,1]
     data.logit_transform: x -> log(x / (1-x)) ([0,1] -> [-inf, inf])
     """
+    # grayscale_tensor -> rgb_tenor
+    if X.shape[2]==1 and config.data.channels != X.shape[2]:
+        X = X.repeat(1,1,config.data.channels,1,1)
+        X[:,:,1:] += torch.randn_like(X[:,:,1:])*config.data.ch_noise    # add noise to repeated part
+
     if getattr(config.data, 'uniform_dequantization', False):
         X = X / 256. * 255. + torch.rand_like(X) / 256.
     if config.data.gaussian_dequantization:
@@ -107,9 +112,6 @@ def data_transform(config, X):
     elif config.data.logit_transform:
         X = logit_transform(X)
 
-    # grayscale_tensor -> rgb_tenor
-    if config.data.channels != X.shape[2]:
-        X = X.repeat(1,1,3,1,1)
 
     if hasattr(config, 'image_mean'):
         return X - config.image_mean.to(X.device)[None, ...]
