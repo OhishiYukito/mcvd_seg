@@ -2,15 +2,16 @@
 device: cuda
 
 data:
-  dataset: bair64
+  dataset: kth64
   channels: 3
+  ch_noise: 0.1
   logit_transform: False
   uniform_dequantization: False
   gaussian_dequantization: False
   rescaled: True
-  num_frames: 5
-  num_frames_total: 15
-  num_frames_cond: 1
+  num_frames: 10
+  num_frames_total: 30
+  num_frames_cond: 10
   num_frames_future: 0
 
 model:
@@ -34,7 +35,7 @@ optim:
   weight_decay: 0.000
   beta1: 0.9
   amsgrad: False
-  eps: 0.1
+  eps: 0.00000001
 
 
 train:

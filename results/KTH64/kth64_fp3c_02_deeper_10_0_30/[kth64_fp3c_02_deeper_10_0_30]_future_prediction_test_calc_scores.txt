@@ -1,0 +1,7 @@
+---future_prediction---
+psnr:	{'avg': 23.06, 'std': 2.966}
+mse:	{'avg': 0.006, 'std': 0.004}
+ssim:	{'avg': 0.721, 'std': 0.082}
+lpips:	{'avg': -0.003, 'std': 0.003}
+fvd_traj:	{'avg': 1529.654, 'std': 34.766}
+fvd:	{'avg': 1492.193}
