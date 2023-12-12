@@ -20,7 +20,7 @@ import copy
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_fpgs_deeper_1_0_5.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_fp_deeper_1_0_5.yaml')
 
 args = parser.parse_args()
 
@@ -196,8 +196,8 @@ for test_batch in tqdm(test_dataloader):
                 prev_pred = pred
                 
             # cut off num_frames_total frames 
-            all_pred = all_pred[:, :config.data.num_frames_total]
-            target_total = target_total[:, :config.data.num_frames_total]
+            all_pred = all_pred[:, :config.data.num_frames_total*channels]
+            target_total = target_total[:, :config.data.num_frames_total*channels]
             
             # Calculate accuracy with target, pred
             target_total = inverse_data_transform(config, target_total)
@@ -382,8 +382,8 @@ with torch.no_grad():
         
         # cut off num_frames_total frames 
         if task!="segmentation":
-            all_pred = all_pred[:, :config.data.num_frames_total]
-            target_total = target_total[:, :config.data.num_frames_total]
+            all_pred = all_pred[:, :config.data.num_frames_total*channels]
+            target_total = target_total[:, :config.data.num_frames_total*channels]
     
         target_total = inverse_data_transform(config, target_total).cpu()
         #import matplotlib.pyplot as plt
