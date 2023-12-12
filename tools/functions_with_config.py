@@ -268,9 +268,9 @@ class FuncsWithConfig:
                 tags.append("past_prediction")
         else:
             if self.num_future==0:
-                if 0<=self.prob_mask_p<1:
-                    tags.append("generation")
                 if 0<self.prob_mask_p<=1:
+                    tags.append("generation")
+                if 0<=self.prob_mask_p<1:
                     tags.append("future_prediction")
             else:
                 if 0<=self.prob_mask_p<1 and 0<=self.prob_mask_f<1:
