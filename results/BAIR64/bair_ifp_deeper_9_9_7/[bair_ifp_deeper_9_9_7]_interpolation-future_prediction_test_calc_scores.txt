@@ -1,0 +1,14 @@
+---interpolation---
+psnr:	{'avg': 20.043, 'std': 2.525}
+mse:	{'avg': 0.012, 'std': 0.007}
+ssim:	{'avg': 0.882, 'std': 0.061}
+lpips:	{'avg': 0.001, 'std': 0.001}
+fvd_traj:	{'avg': 89.965, 'std': 2.353}
+fvd:	{'avg': 74.723}
+---future_prediction---
+psnr:	{'avg': 18.581, 'std': 2.327}
+mse:	{'avg': 0.016, 'std': 0.009}
+ssim:	{'avg': 0.848, 'std': 0.071}
+lpips:	{'avg': 0.002, 'std': 0.001}
+fvd_traj:	{'avg': 110.302, 'std': 2.878}
+fvd:	{'avg': 89.469}
