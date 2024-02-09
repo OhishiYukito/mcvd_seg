@@ -1,5 +1,8 @@
 results/**/*.pkl
 results/**/*.pt
+!results/KTH64/kth64_fpgs1c_deeper_10_0_30/**.pkl
+!results/KTH64/kth64_fpgs3c_02_deeper_10_0_30/**.pkl
+!results/KTH64/kth64_fpgs3c_deeper_10_0_30/**.pkl
 
 wandb/
 datasets/BAIR_h5/

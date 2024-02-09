@@ -20,7 +20,7 @@ import copy
 
 # get args
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_fp_deeper_1_0_5.yaml')
+parser.add_argument('--config_path', help="path of config (.yaml)", default='bair_fppgs_deeper_9_9_7.yaml')
 
 args = parser.parse_args()
 
@@ -207,7 +207,7 @@ for test_batch in tqdm(test_dataloader):
                 conds_test_first = [inverse_data_transform(config, d) if d is not None else None for d in conds_test_first]
             all_pred = inverse_data_transform(config, all_pred)
             accuracies = funcs.get_accuracy(all_pred, target_total, conds_test_first, 
-                                            model_lpips=model_lpips, i3d=i3d, calc_fvd=False, only_embedding=True)
+                                            model_lpips=model_lpips, i3d=i3d, calc_fvd=False, only_embedding=True, task=task)
             
             # append each score
             for key in result_base.keys():
@@ -257,7 +257,7 @@ for task in result.keys():
             calc_result[task]["fvd_per_batch"] = {"avg":avg, "std":std}
             print(f"fvd_per_batch:\t{avg}±{std}")
             
-        elif key=="embeddings":
+        elif key=="embeddings" and (result[task][key]["target"][0] is not None):
             target_embeddings = np.concatenate(np.array(result[task][key]["target"]))
             pred_embeddings = np.concatenate(np.array(result[task][key]["pred"]))
             fvd = round(frechet_distance(pred_embeddings, target_embeddings),3)

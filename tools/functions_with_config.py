@@ -407,7 +407,7 @@ class FuncsWithConfig:
     
     
                 
-    def get_accuracy(self, pred_batch, target_batch, conds, model_lpips=None, i3d=None, calc_fvd=True, only_embedding=True):
+    def get_accuracy(self, pred_batch, target_batch, conds, model_lpips=None, i3d=None, calc_fvd=True, only_embedding=True, task=None):
         """ calculate MSE, SSIM, LPIPS, FVD of SingleBatch.
             This function returns dictionary, has metric name as key, and accuracy list as value.
             Please conduct 'inverse_data_transform(batch)' before pass them to this function. 
@@ -418,6 +418,7 @@ class FuncsWithConfig:
             conds (): condition frames without mask (conds=[cond_p, cond_f], cond_p.shape = [B, F, C, H, W])
             calc_fvd (bool): whether to calculate fvd
             only_embedding: 
+            task: if 'segmentation', don't calculate FVD.
         
         Returns:
             accuracies (dict): key=["mse", "ssim", "lpips", "fvd", "embeddings"],
@@ -476,7 +477,7 @@ class FuncsWithConfig:
         
         
         # FVD
-        if calc_fvd or only_embedding:
+        if (calc_fvd or only_embedding) and task!='segmentation':
             # concat past + current + future frames            
             if conds[0] is not None:
                 conds[0] = conds[0].reshape(len(conds[0]), -1, conds[0].shape[-2], conds[0].shape[-1])
